@@ -20,13 +20,13 @@ const CHECKPOINT_GENERATION_SKILL = `You generate reading checkpoints from a bou
 Use the current context as the source of truth. The previous summary is only background and must
 not introduce facts absent from the current context.
 
-Return JSON only, with exactly one of these shapes:
+Return JSON only, with exactly one of these shapes. A checkpoint must contain 1 to 5 questions:
 Checklist:
-{"type":"checklist","question":"...","options":["...","..."],"correctAnswers":["..."],"explanation":"..."}
+{"type":"checklist","questions":[{"question":"...","options":["...","..."],"correctAnswers":["..."],"explanation":"..."}]}
 Multiple choice (use this for true/false too):
-{"type":"multiple_choice","question":"...","options":["...","..."],"correctAnswers":["..."],"explanation":"..."}
+{"type":"multiple_choice","questions":[{"question":"...","options":["...","..."],"correctAnswers":["..."],"explanation":"..."}]}
 Short answer:
-{"type":"short_answer","question":"...","explanation":"..."}
+{"type":"short_answer","questions":[{"question":"...","explanation":"..."}]}
 
 Checklist and multiple_choice correctAnswers must contain only exact strings from options. Include
 all correct answers, and make distractors plausible but contradicted by the context. For a true/false
@@ -55,46 +55,54 @@ function extractJson(value) {
 }
 
 function normalizeCheckpoint(raw) {
-  if (!raw || !CHECKPOINT_TYPES.includes(raw.type) || typeof raw.question !== "string") {
+  if (!raw || !CHECKPOINT_TYPES.includes(raw.type)) {
     throw new Error("Gemma returned an invalid checkpoint type or question.");
   }
-  const checkpoint = {
+  const questions = Array.isArray(raw.questions)
+    ? raw.questions
+    : [{ question: raw.question, options: raw.options, correctAnswers: raw.correctAnswers, explanation: raw.explanation }];
+  if (questions.length < 1 || questions.length > 5) {
+    throw new Error("Gemma must return between 1 and 5 checkpoint questions.");
+  }
+  return {
     type: raw.type,
-    question: raw.question.trim(),
-    explanation: String(raw.explanation || "").trim()
+    questions: questions.map((rawQuestion) => {
+      const question = String(rawQuestion?.question || "").trim();
+      const explanation = String(rawQuestion?.explanation || "").trim();
+      if (!question || !explanation) {
+        throw new Error("Gemma returned an incomplete checkpoint question.");
+      }
+      const generatedText = `${question} ${explanation}`;
+      if (/[\u3400-\u9fff\u3040-\u30ff\u0400-\u04ff]/u.test(generatedText)) {
+        throw new Error("Gemma returned checkpoint content in a non-English script.");
+      }
+      if (raw.type === "short_answer") {
+        return { question, explanation };
+      }
+      if (!Array.isArray(rawQuestion.options) || rawQuestion.options.length < 2) {
+        throw new Error("Gemma returned too few checkpoint options.");
+      }
+      const options = [...new Set(rawQuestion.options.map((option) => String(option).trim()).filter(Boolean))];
+      const correctAnswers = [...new Set(
+        (Array.isArray(rawQuestion.correctAnswers) ? rawQuestion.correctAnswers : [])
+          .map((answer) => String(answer).trim())
+          .filter((answer) => options.includes(answer))
+      )];
+      if (options.length < 2 || correctAnswers.length < 1) {
+        throw new Error("Gemma returned answers that are not present in the options.");
+      }
+      if (raw.type === "multiple_choice" &&
+          options.length === 2 &&
+          options.every((option) => option === "True" || option === "False") &&
+          correctAnswers.length !== 1) {
+        throw new Error("A true/false checkpoint must have exactly one correct answer.");
+      }
+      if (/[\u3400-\u9fff\u3040-\u30ff\u0400-\u04ff]/u.test(options.join(" "))) {
+        throw new Error("Gemma returned checkpoint content in a non-English script.");
+      }
+      return { question, options, correctAnswers, explanation };
+    })
   };
-  if (!checkpoint.question || !checkpoint.explanation) {
-    throw new Error("Gemma returned an incomplete checkpoint.");
-  }
-  const generatedText = `${checkpoint.question} ${checkpoint.explanation}`;
-  if (/[\u3400-\u9fff\u3040-\u30ff\u0400-\u04ff]/u.test(generatedText)) {
-    throw new Error("Gemma returned checkpoint content in a non-English script.");
-  }
-  if (raw.type === "short_answer") {
-    return checkpoint;
-  }
-  if (!Array.isArray(raw.options) || raw.options.length < 2) {
-    throw new Error("Gemma returned too few checkpoint options.");
-  }
-  const options = [...new Set(raw.options.map((option) => String(option).trim()).filter(Boolean))];
-  const correctAnswers = [...new Set(
-    (Array.isArray(raw.correctAnswers) ? raw.correctAnswers : [])
-      .map((answer) => String(answer).trim())
-      .filter((answer) => options.includes(answer))
-  )];
-  if (options.length < 2 || correctAnswers.length < 1) {
-    throw new Error("Gemma returned answers that are not present in the options.");
-  }
-  if (raw.type === "multiple_choice" &&
-      options.length === 2 &&
-      options.every((option) => option === "True" || option === "False") &&
-      correctAnswers.length !== 1) {
-    throw new Error("A true/false checkpoint must have exactly one correct answer.");
-  }
-  if (/[\u3400-\u9fff\u3040-\u30ff\u0400-\u04ff]/u.test(options.join(" "))) {
-    throw new Error("Gemma returned checkpoint content in a non-English script.");
-  }
-  return { ...checkpoint, options, correctAnswers };
 }
 
 function buildCheckpointPrompt({ context, previousSummary = "" }) {
@@ -107,7 +115,7 @@ ${previousSummary || "(none)"}
 Current checkpoint context:
 ${context}
 
-Generate exactly one checkpoint now.`;
+Generate exactly one checkpoint now, with 1 to 5 focused questions.`;
 }
 
 function buildSummaryPrompt({ previousSummary = "", context }) {

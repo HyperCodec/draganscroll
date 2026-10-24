@@ -66,10 +66,7 @@ async function renderPdf(source) {
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const initialViewport = page.getViewport({ scale: 1.35 });
-    const scale = Math.min(
-      1.35,
-      4096 / Math.max(initialViewport.width, initialViewport.height)
-    );
+    const scale = Math.min(1.1, 1800 / Math.max(initialViewport.width, initialViewport.height));
     const viewport = page.getViewport({ scale });
     const container = document.createElement("article");
     container.className = "page";
@@ -80,7 +77,11 @@ async function renderPdf(source) {
     canvas.height = Math.ceil(viewport.height);
     container.appendChild(canvas);
     pages.appendChild(container);
-    await page.render({ canvasContext: context, viewport }).promise;
+    await page.render({
+      canvasContext: context,
+      viewport,
+      background: "white"
+    }).promise;
 
     const textContent = await page.getTextContent();
     const text = textContent.items
@@ -267,73 +268,76 @@ function addCheckpointCard(page, checkpoint, checkpointIndex, context) {
   card.className = "checkpoint-card";
   const title = document.createElement("strong");
   title.textContent = `Checkpoint ${checkpointIndex + 1} · ${checkpoint.type.replace("_", " ")}`;
-  const question = document.createElement("p");
-  question.textContent = checkpoint.question;
-  card.append(title, question);
-
-  let controls;
-  if (checkpoint.type === "short_answer") {
-    controls = document.createElement("textarea");
-    controls.rows = 3;
-    controls.placeholder = "Write your answer…";
-    controls.className = "checkpoint-answer";
-  } else {
-    controls = document.createElement("div");
-    controls.className = "checkpoint-options";
-    const useCheckboxes = checkpoint.type === "checklist" || checkpoint.correctAnswers.length > 1;
-    checkpoint.options.forEach((option, optionIndex) => {
-      const label = document.createElement("label");
-      const input = document.createElement("input");
-      input.type = useCheckboxes ? "checkbox" : "radio";
-      input.name = `checkpoint-${checkpointIndex}`;
-      input.value = option;
-      input.id = `checkpoint-${checkpointIndex}-${optionIndex}`;
-      const text = document.createElement("span");
-      text.textContent = option;
-      label.append(input, text);
-      controls.append(label);
-    });
-  }
-
-  const submit = document.createElement("button");
-  submit.type = "button";
-  submit.textContent = "Check answer";
-  const feedback = document.createElement("p");
-  feedback.className = "checkpoint-feedback";
-  submit.addEventListener("click", async () => {
+  card.append(title);
+  checkpoint.questions.forEach((question, questionIndex) => {
+    const questionBlock = document.createElement("div");
+    questionBlock.className = "checkpoint-question";
+    const prompt = document.createElement("p");
+    prompt.textContent = `${questionIndex + 1}. ${question.question}`;
+    questionBlock.append(prompt);
+    let controls;
     if (checkpoint.type === "short_answer") {
-      const answer = controls.value.trim();
-      if (!answer) {
-        feedback.textContent = "Write an answer before checking it.";
-        feedback.className = "checkpoint-feedback incorrect";
+      controls = document.createElement("textarea");
+      controls.rows = 3;
+      controls.placeholder = "Write your answer…";
+      controls.className = "checkpoint-answer";
+    } else {
+      controls = document.createElement("div");
+      controls.className = "checkpoint-options";
+      const useCheckboxes = checkpoint.type === "checklist" || question.correctAnswers.length > 1;
+      question.options.forEach((option, optionIndex) => {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = useCheckboxes ? "checkbox" : "radio";
+        input.name = `checkpoint-${checkpointIndex}-question-${questionIndex}`;
+        input.value = option;
+        input.id = `checkpoint-${checkpointIndex}-${questionIndex}-${optionIndex}`;
+        const text = document.createElement("span");
+        text.textContent = option;
+        label.append(input, text);
+        controls.append(label);
+      });
+    }
+    const feedback = document.createElement("p");
+    feedback.className = "checkpoint-feedback";
+    const submit = document.createElement("button");
+    submit.type = "button";
+    submit.textContent = "Check answer";
+    submit.addEventListener("click", async () => {
+      if (checkpoint.type === "short_answer") {
+        const answer = controls.value.trim();
+        if (!answer) {
+          feedback.textContent = "Write an answer before checking it.";
+          feedback.className = "checkpoint-feedback incorrect";
+          return;
+        }
+        submit.disabled = true;
+        feedback.textContent = "Evaluating your answer…";
+        try {
+          const session = await acquireTextSession();
+          feedback.textContent = await evaluateShortAnswer(session, {
+            checkpoint: question,
+            answer,
+            context
+          });
+          feedback.className = "checkpoint-feedback";
+        } catch (error) {
+          feedback.textContent = `Unable to evaluate the answer: ${error.message || error}`;
+          feedback.className = "checkpoint-feedback incorrect";
+        } finally {
+          submit.disabled = false;
+        }
         return;
       }
-      submit.disabled = true;
-      feedback.textContent = "Gemma is evaluating your answer…";
-      try {
-        feedback.textContent = "Evaluating your answer…";
-        const session = await acquireTextSession();
-        feedback.textContent = await evaluateShortAnswer(session, {
-          checkpoint,
-          answer,
-          context
-        });
-        feedback.className = "checkpoint-feedback";
-      } catch (error) {
-        feedback.textContent = `Unable to evaluate the answer: ${error.message || error}`;
-        feedback.className = "checkpoint-feedback incorrect";
-      } finally {
-        submit.disabled = false;
-      }
-      return;
-    }
-    const answer = [...controls.querySelectorAll("input:checked")].map((input) => input.value);
-    const correct = answer.length === checkpoint.correctAnswers.length &&
-      answer.every((value) => checkpoint.correctAnswers.includes(value));
-    feedback.textContent = correct ? "Correct." : `Not quite. ${checkpoint.explanation}`;
-    feedback.className = `checkpoint-feedback ${correct ? "correct" : "incorrect"}`;
+      const answer = [...controls.querySelectorAll("input:checked")].map((input) => input.value);
+      const correct = answer.length === question.correctAnswers.length &&
+        answer.every((value) => question.correctAnswers.includes(value));
+      feedback.textContent = correct ? "Correct." : `Not quite. ${question.explanation}`;
+      feedback.className = `checkpoint-feedback ${correct ? "correct" : "incorrect"}`;
+    });
+    questionBlock.append(controls, submit, feedback);
+    card.append(questionBlock);
   });
-  card.append(controls, submit, feedback);
   page.container.append(card);
 }
 
