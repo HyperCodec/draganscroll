@@ -3,59 +3,94 @@ const isLikelyPdfContext =
   document.contentType === "application/pdf" ||
   Boolean(document.querySelector('embed[type="application/pdf"], object[type="application/pdf"]'));
 
-if (isLikelyPdfContext && !document.getElementById("draganscroll-checkpoint-btn")) {
-  const button = document.createElement("button");
-  button.id = "draganscroll-checkpoint-btn";
-  button.type = "button";
-  button.textContent = "Checkpoint";
-  Object.assign(button.style, {
+function getSections() {
+  const candidates = [...document.querySelectorAll("h1, h2, h3, h4, p, li")];
+  return candidates
+    .map((element) => ({
+      element,
+      isHeading: /^H[1-4]$/.test(element.tagName),
+      text: element.textContent.replace(/\s+/g, " ").trim()
+    }))
+    .filter(({ isHeading, text }) => isHeading || text.length >= 80)
+    .map(({ element, isHeading, text }, index) => ({
+      element,
+      index,
+      isHeading,
+      text: text.slice(0, 1200)
+    }));
+}
+
+function addPlaceholder(section, index, reason) {
+  const placeholder = document.createElement("aside");
+  placeholder.className = "draganscroll-checkpoint-placeholder";
+  placeholder.setAttribute("aria-label", `Checkpoint ${index + 1}`);
+  placeholder.textContent = `Checkpoint ${index + 1} · ${reason}`;
+  Object.assign(placeholder.style, {
+    margin: "16px 0",
+    padding: "10px 12px",
+    border: "1px dashed #64748b",
+    borderRadius: "8px",
+    background: "#f8fafc",
+    color: "#334155",
+    font: "13px system-ui, sans-serif"
+  });
+  section.before(placeholder);
+}
+
+function showStatus(message, isError = false) {
+  const status = document.createElement("div");
+  status.id = "draganscroll-status";
+  status.textContent = message;
+  Object.assign(status.style, {
     position: "fixed",
     right: "16px",
     bottom: "16px",
     zIndex: "2147483647",
-    border: "1px solid #1f2937",
-    borderRadius: "6px",
+    maxWidth: "300px",
     padding: "10px 12px",
-    background: "#111827",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontFamily: "system-ui, sans-serif",
-    fontSize: "14px"
+    borderRadius: "8px",
+    background: isError ? "#fee2e2" : "#e0f2fe",
+    color: isError ? "#991b1b" : "#075985",
+    font: "13px system-ui, sans-serif",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.12)"
   });
+  document.body.appendChild(status);
+  window.setTimeout(() => status.remove(), 4000);
+}
 
-  button.addEventListener("click", () => {
-    chrome.runtime.sendMessage({ type: "generateCheckpoint" }, (response) => {
-      const checkpoint = response?.checkpoint;
-      if (!checkpoint) {
+function planPlaceholders() {
+  if (document.querySelector(".draganscroll-checkpoint-placeholder")) {
+    return;
+  }
+
+  const sections = getSections();
+  if (sections.length < 2) {
+    showStatus("No readable sections were found for checkpoint planning.", true);
+    return;
+  }
+
+  chrome.runtime.sendMessage(
+    {
+      type: "planCheckpoints",
+      sections: sections.map(({ index, isHeading, text }) => ({ index, isHeading, text }))
+    },
+    (response) => {
+      if (chrome.runtime.lastError || response?.error) {
+        showStatus(response?.error || "Checkpoint planning failed.", true);
         return;
       }
 
-      const existing = document.getElementById("draganscroll-checkpoint-card");
-      if (existing) {
-        existing.remove();
-      }
-
-      const card = document.createElement("aside");
-      card.id = "draganscroll-checkpoint-card";
-      Object.assign(card.style, {
-        position: "fixed",
-        right: "16px",
-        bottom: "64px",
-        zIndex: "2147483647",
-        width: "320px",
-        background: "#ffffff",
-        border: "1px solid #d1d5db",
-        borderRadius: "8px",
-        boxShadow: "0 8px 16px rgba(0, 0, 0, 0.12)",
-        padding: "12px",
-        fontFamily: "system-ui, sans-serif",
-        color: "#111827"
+      response?.plan?.checkpoints?.forEach(({ sectionIndex, reason }, checkpointIndex) => {
+        const section = sections.find(({ index }) => index === sectionIndex);
+        if (section) {
+          addPlaceholder(section.element, checkpointIndex, reason);
+        }
       });
+      showStatus(`${response?.plan?.checkpoints?.length || 0} checkpoint placeholders added.`);
+    }
+  );
+}
 
-      card.innerHTML = `<strong>Mini checkpoint</strong><p>${checkpoint.question}</p><small>${checkpoint.answerHint}</small>`;
-      document.body.appendChild(card);
-    });
-  });
-
-  document.body.appendChild(button);
+if (isLikelyPdfContext) {
+  planPlaceholders();
 }
