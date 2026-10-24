@@ -1,19 +1,23 @@
-const DEFAULT_CHECKPOINT = {
-  question: "What is the main point of the page you just read?",
-  answerHint: "Summarize it in one or two sentences."
-};
+import { GEMMA4_MODEL, planCheckpoints } from "./gemma4-skill.js";
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set({
-    modelPlan: "gemma-4-browser",
-    checkpointMode: "stub"
+    model: GEMMA4_MODEL,
+    checkpointMode: "placeholder-planning"
   });
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "generateCheckpoint") {
+  if (message?.type !== "planCheckpoints" || !Array.isArray(message.sections)) {
     return;
   }
 
-  sendResponse({ checkpoint: DEFAULT_CHECKPOINT });
+  planCheckpoints(message.sections)
+    .then((plan) => sendResponse({ plan }))
+    .catch((error) => {
+      console.error("Unable to plan checkpoints", error);
+      sendResponse({ error: "Unable to plan checkpoints." });
+    });
+
+  return true;
 });
