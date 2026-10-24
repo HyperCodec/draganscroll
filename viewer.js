@@ -25,6 +25,7 @@ const sourceUrl = new URLSearchParams(window.location.search).get("url");
 let renderedPages = [];
 let warmTextSessionPromise;
 let warmTextSession;
+let activeTextSession;
 let warmImageSessionPromise;
 let warmImageSession;
 let textModelReady = false;
@@ -64,14 +65,19 @@ async function renderPdf(source) {
   const pdf = await pdfjsLib.getDocument(source).promise;
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1.35 });
+    const initialViewport = page.getViewport({ scale: 1.35 });
+    const scale = Math.min(
+      1.35,
+      4096 / Math.max(initialViewport.width, initialViewport.height)
+    );
+    const viewport = page.getViewport({ scale });
     const container = document.createElement("article");
     container.className = "page";
     container.dataset.pageNumber = pageNumber;
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { alpha: false });
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
     container.appendChild(canvas);
     pages.appendChild(container);
     await page.render({ canvasContext: context, viewport }).promise;
@@ -139,21 +145,26 @@ async function warmTextModel() {
 }
 
 async function acquireTextSession() {
+  if (activeTextSession) {
+    return activeTextSession;
+  }
   if (warmTextSessionPromise) {
     await warmTextSessionPromise;
   }
   if (warmTextSession) {
     const session = warmTextSession;
     warmTextSession = undefined;
-    return session;
+    activeTextSession = session;
+    return activeTextSession;
   }
-  return createTextSession({
+  activeTextSession = await createTextSession({
     onDownloadProgress: (loaded, total) => {
       updateModelProgress(textModelProgress, textModelProgressBar, textModelProgressLabel,
         "Text model: downloading", loaded, total);
       setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
     }
   });
+  return activeTextSession;
 }
 
 async function createImageSession() {
@@ -300,18 +311,14 @@ function addCheckpointCard(page, checkpoint, checkpointIndex, context) {
       submit.disabled = true;
       feedback.textContent = "Gemma is evaluating your answer…";
       try {
-        feedback.textContent = "Preparing Gemma model…";
+        feedback.textContent = "Evaluating your answer…";
         const session = await acquireTextSession();
-        try {
-          feedback.textContent = await evaluateShortAnswer(session, {
-            checkpoint,
-            answer,
-            context
-          });
-          feedback.className = "checkpoint-feedback";
-        } finally {
-          session.destroy();
-        }
+        feedback.textContent = await evaluateShortAnswer(session, {
+          checkpoint,
+          answer,
+          context
+        });
+        feedback.className = "checkpoint-feedback";
       } catch (error) {
         feedback.textContent = `Unable to evaluate the answer: ${error.message || error}`;
         feedback.className = "checkpoint-feedback incorrect";
@@ -359,7 +366,7 @@ async function planAndGenerate(sections, emptyMessage) {
       previousSectionIndex = sectionIndex + 1;
     }
   } finally {
-    session.destroy();
+    activeTextSession = session;
   }
   setStatus(`${plan.checkpoints.length} Gemma checkpoints added.`);
 }
@@ -449,9 +456,11 @@ planButton.addEventListener("click", async () => {
 });
 
 resetButton.addEventListener("click", () => {
+  activeTextSession?.destroy();
   warmTextSession?.destroy();
   warmImageSession?.destroy();
   warmTextSession = undefined;
+  activeTextSession = undefined;
   warmImageSession = undefined;
   warmTextSessionPromise = undefined;
   warmImageSessionPromise = undefined;

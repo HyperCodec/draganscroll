@@ -171,9 +171,13 @@ async function updateReadingSummary(session, input) {
 }
 
 async function evaluateShortAnswer(session, { checkpoint, answer, context }) {
-  const response = await session.prompt(`Evaluate a reader's short answer using only the source context.
-Give a detailed, encouraging explanation of what is correct, partially correct, or incorrect,
-and state the key details the reader should remember. Do not assign a numeric score.
+  const response = await session.prompt(`Evaluate the reader's answer against the exact question and source context.
+Be direct and concise. Decide whether the answer addresses what the question asks, not whether it
+contains a merely true but irrelevant fact. Explain the specific missing or incorrect detail and
+give the answer supported by the context. Do not praise irrelevant facts, invent facts, or assign
+a numeric score.
+Return plain text only: no Markdown, no headings, no bullets, no bold or italic markers, and no
+special formatting. Use at most 4 short sentences.
 
 Question:
 ${checkpoint.question}
