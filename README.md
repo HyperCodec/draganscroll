@@ -13,4 +13,6 @@ Use the **Library** button to return to the upload screen. Pages are rendered as
 
 ## Current milestone
 
-Milestone 1 includes PDF upload and lazy page rendering with pdf.js. Text extraction, reading sections, checkpoints, quizzes, and model calls are not implemented yet.
+Milestone 2 adds per-page text extraction in visual reading order, approximately 700-word reading sections, and one-time checkpoint detection as the viewport scrolls forward. Rendered pages also have a selectable pdf.js text layer so text can be highlighted and copied. Use `?debug=1` on the app URL to show checkpoint lines and current section progress. PDFs with fewer than 50 selectable words show a notice and do not get checkpoints.
+
+Milestone 3 will add a modal with a mock question at each reached checkpoint. No quiz modal or model call is included yet.
