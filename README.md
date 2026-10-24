@@ -30,8 +30,9 @@ This repository now includes a minimal Manifest V3 extension:
 - The viewer can send rendered page images directly to Chrome's built-in multimodal
   Gemma API for scanned pages when the browser has the on-device image model available.
 - The viewer generates interactive checklist, multiple-choice (including true/false), and short-answer
-  checkpoints with Gemma. Closed-option answers are validated against the generated options, and
-  incorrect answers receive the generated explanation.
+  checkpoints with Gemma. Each checkpoint contains exactly three focused questions. Closed-option
+  answers are validated against the generated options, and incorrect answers receive the generated
+  explanation.
 - Each checkpoint uses the PDF text from the previous checkpoint boundary through the current
   boundary. A bounded rolling summary is carried forward so older sections remain available without
   filling the model context window.

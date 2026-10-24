@@ -20,7 +20,8 @@ const CHECKPOINT_GENERATION_SKILL = `You generate reading checkpoints from a bou
 Use the current context as the source of truth. The previous summary is only background and must
 not introduce facts absent from the current context.
 
-Return JSON only, with exactly one of these shapes. A checkpoint must contain 1 to 5 questions:
+Return JSON only, with exactly one of these shapes. Every checkpoint must contain exactly 3
+distinct questions:
 Checklist:
 {"type":"checklist","questions":[{"question":"...","options":["...","..."],"correctAnswers":["..."],"explanation":"..."}]}
 Multiple choice (use this for true/false too):
@@ -61,8 +62,8 @@ function normalizeCheckpoint(raw) {
   const questions = Array.isArray(raw.questions)
     ? raw.questions
     : [{ question: raw.question, options: raw.options, correctAnswers: raw.correctAnswers, explanation: raw.explanation }];
-  if (questions.length < 1 || questions.length > 5) {
-    throw new Error("Gemma must return between 1 and 5 checkpoint questions.");
+  if (questions.length !== 3) {
+    throw new Error("Gemma must return exactly 3 checkpoint questions.");
   }
   return {
     type: raw.type,
@@ -115,9 +116,9 @@ ${previousSummary || "(none)"}
 Current checkpoint context:
 ${context}
 
-Generate exactly one checkpoint now. Use 2 to 5 focused questions when the current context
-contains enough distinct material to support them; use exactly 1 only when the context is too
-narrow for a second non-redundant question.`;
+Generate exactly one checkpoint now with exactly 3 focused, non-redundant questions. If the
+current context is narrow, ask about different concrete details, relationships, or implications
+from the same material rather than returning fewer questions or asking about tone and style.`;
 }
 
 function buildSummaryPrompt({ previousSummary = "", context }) {
