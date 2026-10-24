@@ -1,51 +1,57 @@
-# draganscroll
+# 🐉📜 DraganScroll
 
-A Chrome Extension PoC for adding AI-generated checkpoints to PDF reading.
+**Transform passive PDF reading into an interactive, multimodal learning experience with on-device Gemma 4.**
 
-## Current scaffold
+## About the Project
 
-This repository now includes a minimal Manifest V3 extension:
+DraganScroll is a local-first Chrome extension that transforms passive PDF reading into an interactive learning experience through auto-generated comprehension checkpoints.
 
-- `manifest.json` (MV3 config)
-- `background.js` (Gemma 4 checkpoint planning message handler)
-- `gemma4-skill.js` (Gemma 4 metadata, planning, checkpoint-generation, and rolling-summary skills)
-- `content-script.js` (plans and inserts document-anchored checkpoint placeholders)
-- `popup.html` / `popup.js` (basic extension status UI)
-- `viewer.html` / `viewer.js` (extension-owned PDF.js viewer with checkpoint overlays)
+To meet the short hackathon deadline, our team deployed a deliberate "shotgun vibe coding" strategy—rapidly building parallel prototypes to bypass merge conflicts and identify the strongest architecture. The winning result leverages on-device Gemma 4 text and multimodal vision to intelligently map document structures, generate contextual reading quizzes, and evaluate short answers locally without ever sending your data to the cloud.
 
-## Load locally in Chrome
+Built for the **MLH Hacktoberfest Hack Day Pittsburgh (2026)**.
 
-1. Open `chrome://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked**
-4. Select `/home/runner/work/draganscroll/draganscroll`
+## ✨ Features
 
-## Current behavior
+* **Local-First & Private:** Runs entirely on-device using Chrome's built-in `window.LanguageModel` API. Your personal PDFs and academic papers never leave your machine.
+* **Smart Checkpoint Planning:** Analyzes document structure to intelligently place reading checkpoints at logical intervals, rather than arbitrarily splitting pages.
+* **Active Recall Quizzing:** Automatically generates a mix of multiple-choice, checklist, and short-answer questions based strictly on the bounded context of the reading section.
+* **Local Auto-Grading:** Evaluates your written short answers against the source text to provide immediate, context-aware feedback on what you missed.
+* **Multimodal Vision Fallback:** Seamlessly switches to Gemma 4's image capabilities to scan and extract educational content from image-only, non-OCR textbook PDFs.
+* **Robust JSON Sanitization:** Features a custom open-source model harness that scrubs PDF typography and auto-corrects syntax to force strict JSON outputs from lightweight models.
 
-- The fixed-place checkpoint button has been removed.
-- The popup can open the active PDF in the extension-owned PDF.js viewer. On a readable
-  PDF page, the viewer extracts its own text layer,
-  identifies substantial text sections (including generic PDF text layers), and plans
-  boundaries between significant portions.
-- The viewer can send rendered page images directly to Chrome's built-in multimodal
-  Gemma API for scanned pages when the browser has the on-device image model available.
-- The viewer generates interactive checklist, multiple-choice (including true/false), and short-answer
-  checkpoints with Gemma. Each checkpoint contains exactly three focused questions: one checklist,
-  one multiple-choice question, and one short-answer question. Closed-option answers are validated
-  against the generated options, and incorrect answers receive the generated explanation.
-- Each checkpoint uses the PDF text from the previous checkpoint boundary through the current
-  boundary. A bounded rolling summary is carried forward so older sections remain available without
-  filling the model context window.
-- The viewer starts preparing the text model in the background when it opens. Chrome owns and
-  persists the on-device model cache; the viewer's reset control only clears the active extension
-  session and cannot delete Chrome's model files.
-- The planner currently uses a deterministic fallback behind a Gemma 4-compatible skill
-  interface; the local Gemma 4 runtime can be connected in `gemma4-skill.js`.
+## 🛠️ How We Built It: "Shotgun Vibe Coding"
 
-The extension-owned viewer renders checkpoint overlays itself, including for pages
-analyzed through Gemma image input. The browser's native PDF viewer remains unsupported.
+Hackathons are a sprint. Because AI-assisted coding can quickly lead to massive, tangled merge conflicts when multiple developers touch the same logic, we utilized a parallel **"shotgun vibe coding"** approach.
 
-## Intended next steps
+Each team member rapidly built their own prototype of the application on separate branches, exploring different architectural visions (web app vs. desktop vs. extension). After a few hours, we regrouped, evaluated the prototypes, and selected this browser extension version to merge to `master`. This strategy completely bypassed Git bottlenecks, allowed everyone to code freely at maximum speed, and resulted in a frictionless, highly polished final product.
 
-- Connect the `planCheckpoints` adapter to in-browser Gemma 4 inference.
-- Connect checkpoint planning itself to Gemma rather than the deterministic placement fallback.
+## 🚀 Installation & Setup
+
+Because DraganScroll utilizes experimental on-device AI features, you must use a compatible version of Google Chrome with the Prompt API enabled.
+
+### 1. Enable Chrome AI Flags
+
+1. Open Chrome and navigate to `chrome://flags/`.
+2. Search for **Prompt API for Gemini Nano** and set it to **Enabled**.
+3. Search for **Enables optimization guide on device** and set it to **Enabled BypassPrefRequirement**.
+4. Relaunch Chrome. (You may need to wait a few minutes for the model weights to download in the background via `chrome://components`).
+
+### 2. Load the Extension
+
+1. Clone this repository:
+```bash
+git clone https://github.com/HyperCodec/draganscroll.git
+
+```
+
+
+2. Open Chrome and navigate to `chrome://extensions/`.
+3. Toggle on **Developer mode** in the top right corner.
+4. Click **Load unpacked** in the top left corner.
+5. Select the `draganscroll` directory you just cloned.
+6. Open a PDF in your browser and click the DraganScroll extension icon to begin!
+
+## 🏆 Hackathon Tracks
+
+* **Best Use of Gemma 4:** Demonstrates rapid prototyping by utilizing the Gemini API in Chrome to build a focused educational tool with both text and multimodal image support.
+* **Best Open-Source AI Project:** Built entirely around an open-source model harness that strictly manages and sanitizes inputs/outputs to make a lightweight open-weights model reliable for structured JSON generation.
