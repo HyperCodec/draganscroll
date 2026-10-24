@@ -60,11 +60,13 @@ button:disabled {
   justify-items: center;
   gap: 20px;
   padding: 24px;
+  min-width: 0;
 }
 
 .page {
   position: relative;
-  width: fit-content;
+  box-sizing: border-box;
+  width: min(100%, 900px);
   max-width: 100%;
   min-width: 0;
   overflow: hidden;
@@ -74,7 +76,7 @@ button:disabled {
 
 .page canvas {
   display: block;
-  width: auto;
+  width: 100%;
   max-width: 100%;
   height: auto;
 }
@@ -94,6 +96,7 @@ button:disabled {
 .checkpoint-card {
   box-sizing: border-box;
   width: min(calc(100% - 32px), 760px);
+  max-width: calc(100% - 32px);
   min-width: 0;
   margin: 16px;
   padding: 14px;
@@ -105,6 +108,9 @@ button:disabled {
 
 .checkpoint-card p {
   margin: 8px 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .checkpoint-options {

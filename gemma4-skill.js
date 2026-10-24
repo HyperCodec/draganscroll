@@ -115,7 +115,9 @@ ${previousSummary || "(none)"}
 Current checkpoint context:
 ${context}
 
-Generate exactly one checkpoint now, with 1 to 5 focused questions.`;
+Generate exactly one checkpoint now. Use 2 to 5 focused questions when the current context
+contains enough distinct material to support them; use exactly 1 only when the context is too
+narrow for a second non-redundant question.`;
 }
 
 function buildSummaryPrompt({ previousSummary = "", context }) {
