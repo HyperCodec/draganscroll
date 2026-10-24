@@ -272,7 +272,7 @@ function addCheckpointCard(page, checkpoint, checkpointIndex, context) {
   const card = document.createElement("section");
   card.className = "checkpoint-card";
   const title = document.createElement("strong");
-  title.textContent = `Checkpoint ${checkpointIndex + 1} · ${checkpoint.type.replace("_", " ")}`;
+  title.textContent = `Checkpoint ${checkpointIndex + 1}`;
   card.append(title);
   checkpoint.questions.forEach((question, questionIndex) => {
     const questionBlock = document.createElement("div");
@@ -281,7 +281,7 @@ function addCheckpointCard(page, checkpoint, checkpointIndex, context) {
     prompt.textContent = `${questionIndex + 1}. ${question.question}`;
     questionBlock.append(prompt);
     let controls;
-    if (checkpoint.type === "short_answer") {
+    if (question.type === "short_answer") {
       controls = document.createElement("textarea");
       controls.rows = 3;
       controls.placeholder = "Write your answer…";
@@ -289,7 +289,7 @@ function addCheckpointCard(page, checkpoint, checkpointIndex, context) {
     } else {
       controls = document.createElement("div");
       controls.className = "checkpoint-options";
-      const useCheckboxes = checkpoint.type === "checklist" || question.correctAnswers.length > 1;
+      const useCheckboxes = question.type === "checklist" || question.correctAnswers.length > 1;
       question.options.forEach((option, optionIndex) => {
         const label = document.createElement("label");
         const input = document.createElement("input");
@@ -309,7 +309,7 @@ function addCheckpointCard(page, checkpoint, checkpointIndex, context) {
     submit.type = "button";
     submit.textContent = "Check answer";
     submit.addEventListener("click", async () => {
-      if (checkpoint.type === "short_answer") {
+      if (question.type === "short_answer") {
         const answer = controls.value.trim();
         if (!answer) {
           feedback.textContent = "Write an answer before checking it.";

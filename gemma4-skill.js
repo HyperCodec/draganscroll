@@ -20,14 +20,16 @@ const CHECKPOINT_GENERATION_SKILL = `You generate reading checkpoints from a bou
 Use the current context as the source of truth. The previous summary is only background and must
 not introduce facts absent from the current context.
 
-Return JSON only, with exactly one of these shapes. Every checkpoint must contain exactly 3
-distinct questions:
-Checklist:
-{"type":"checklist","questions":[{"question":"...","options":["...","..."],"correctAnswers":["..."],"explanation":"..."}]}
-Multiple choice (use this for true/false too):
-{"type":"multiple_choice","questions":[{"question":"...","options":["...","..."],"correctAnswers":["..."],"explanation":"..."}]}
-Short answer:
-{"type":"short_answer","questions":[{"question":"...","explanation":"..."}]}
+Return JSON only:
+{"questions":[
+  {"type":"checklist","question":"...","options":["...","..."],"correctAnswers":["..."],"explanation":"..."},
+  {"type":"multiple_choice","question":"...","options":["...","..."],"correctAnswers":["..."],"explanation":"..."},
+  {"type":"short_answer","question":"...","explanation":"..."}
+]}
+
+Every checkpoint must contain exactly 3 distinct questions: exactly one checklist, exactly one
+multiple_choice, and exactly one short_answer, in any order. The type belongs on each question,
+not on the checkpoint. Use multiple_choice for true/false when appropriate.
 
 Checklist and multiple_choice correctAnswers must contain only exact strings from options. Include
 all correct answers, and make distractors plausible but contradicted by the context. For a true/false
@@ -56,18 +58,21 @@ function extractJson(value) {
 }
 
 function normalizeCheckpoint(raw) {
-  if (!raw || !CHECKPOINT_TYPES.includes(raw.type)) {
-    throw new Error("Gemma returned an invalid checkpoint type or question.");
+  if (!raw || !Array.isArray(raw.questions)) {
+    throw new Error("Gemma returned an invalid checkpoint question list.");
   }
-  const questions = Array.isArray(raw.questions)
-    ? raw.questions
-    : [{ question: raw.question, options: raw.options, correctAnswers: raw.correctAnswers, explanation: raw.explanation }];
+  const questions = raw.questions;
   if (questions.length !== 3) {
     throw new Error("Gemma must return exactly 3 checkpoint questions.");
   }
+  const types = questions.map((question) => question?.type);
+  if (new Set(types).size !== 3 ||
+      !CHECKPOINT_TYPES.every((type) => types.includes(type))) {
+    throw new Error("Gemma must return one checklist, one multiple_choice, and one short_answer.");
+  }
   return {
-    type: raw.type,
     questions: questions.map((rawQuestion) => {
+      const type = rawQuestion?.type;
       const question = String(rawQuestion?.question || "").trim();
       const explanation = String(rawQuestion?.explanation || "").trim();
       if (!question || !explanation) {
@@ -77,8 +82,8 @@ function normalizeCheckpoint(raw) {
       if (/[\u3400-\u9fff\u3040-\u30ff\u0400-\u04ff]/u.test(generatedText)) {
         throw new Error("Gemma returned checkpoint content in a non-English script.");
       }
-      if (raw.type === "short_answer") {
-        return { question, explanation };
+      if (type === "short_answer") {
+        return { type, question, explanation };
       }
       if (!Array.isArray(rawQuestion.options) || rawQuestion.options.length < 2) {
         throw new Error("Gemma returned too few checkpoint options.");
@@ -92,7 +97,7 @@ function normalizeCheckpoint(raw) {
       if (options.length < 2 || correctAnswers.length < 1) {
         throw new Error("Gemma returned answers that are not present in the options.");
       }
-      if (raw.type === "multiple_choice" &&
+      if (type === "multiple_choice" &&
           options.length === 2 &&
           options.every((option) => option === "True" || option === "False") &&
           correctAnswers.length !== 1) {
@@ -101,7 +106,7 @@ function normalizeCheckpoint(raw) {
       if (/[\u3400-\u9fff\u3040-\u30ff\u0400-\u04ff]/u.test(options.join(" "))) {
         throw new Error("Gemma returned checkpoint content in a non-English script.");
       }
-      return { question, options, correctAnswers, explanation };
+      return { type, question, options, correctAnswers, explanation };
     })
   };
 }
@@ -116,9 +121,9 @@ ${previousSummary || "(none)"}
 Current checkpoint context:
 ${context}
 
-Generate exactly one checkpoint now with exactly 3 focused, non-redundant questions. If the
-current context is narrow, ask about different concrete details, relationships, or implications
-from the same material rather than returning fewer questions or asking about tone and style.`;
+Generate exactly one checkpoint now with exactly 3 focused, non-redundant questions: one checklist,
+one multiple_choice, and one short_answer. If the context is narrow, ask about different concrete
+details, relationships, or implications from the same material rather than asking about tone/style.`;
 }
 
 function buildSummaryPrompt({ previousSummary = "", context }) {
