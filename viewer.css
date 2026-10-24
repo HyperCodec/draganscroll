@@ -48,7 +48,8 @@ button:disabled {
   font-size: 11px;
 }
 
-#model-progress {
+#text-model-progress-bar,
+#image-model-progress-bar {
   width: 170px;
   height: 6px;
   accent-color: #38bdf8;
@@ -122,6 +123,8 @@ button:disabled {
 
 .checkpoint-feedback {
   min-height: 1.2em;
+  max-height: 7em;
+  overflow-y: auto;
   margin-bottom: 0;
 }
 

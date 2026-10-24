@@ -13,14 +13,22 @@ const fileInput = document.querySelector("#file");
 const planButton = document.querySelector("#plan");
 const visionButton = document.querySelector("#vision");
 const resetButton = document.querySelector("#reset");
-const modelProgress = document.querySelector("#model-progress");
-const modelProgressLabel = document.querySelector("#model-progress-label");
+const textModelProgress = document.querySelector("#text-model-progress");
+const textModelProgressBar = document.querySelector("#text-model-progress-bar");
+const textModelProgressLabel = document.querySelector("#text-model-progress-label");
+const imageModelProgress = document.querySelector("#image-model-progress");
+const imageModelProgressBar = document.querySelector("#image-model-progress-bar");
+const imageModelProgressLabel = document.querySelector("#image-model-progress-label");
 const status = document.querySelector("#status");
 const pages = document.querySelector("#pages");
 const sourceUrl = new URLSearchParams(window.location.search).get("url");
 let renderedPages = [];
 let warmTextSessionPromise;
 let warmTextSession;
+let warmImageSessionPromise;
+let warmImageSession;
+let textModelReady = false;
+let imageModelReady = false;
 
 function setStatus(message) {
   status.textContent = message;
@@ -31,10 +39,20 @@ function formatDownloadProgress(loaded, total) {
   return fraction > 0 ? ` (${Math.round(fraction * 100)}%)` : "…";
 }
 
-function updateModelProgress(label, loaded, total) {
+function updateModelProgress(progress, bar, labelElement, label, loaded, total) {
   const fraction = total ? loaded / total : loaded <= 1 ? loaded : 0;
-  modelProgress.value = Math.max(0, Math.min(1, fraction));
-  modelProgressLabel.textContent = `${label}${fraction > 0 ? ` (${Math.round(fraction * 100)}%)` : ""}`;
+  bar.value = Math.max(0, Math.min(1, fraction));
+  labelElement.textContent = `${label}${fraction > 0 ? ` (${Math.round(fraction * 100)}%)` : ""}`;
+  if (fraction >= 1) {
+    progress.hidden = true;
+  } else {
+    progress.hidden = false;
+  }
+}
+
+function updateButtonState() {
+  planButton.disabled = renderedPages.length < 2 || !textModelReady;
+  visionButton.disabled = renderedPages.length < 1 || !imageModelReady;
 }
 
 async function renderPdf(source) {
@@ -68,8 +86,7 @@ async function renderPdf(source) {
     setStatus(`Rendered page ${pageNumber} of ${pdf.numPages}…`);
   }
 
-  planButton.disabled = renderedPages.length < 2;
-  visionButton.disabled = renderedPages.length < 1;
+  updateButtonState();
   setStatus(
     renderedPages.some(({ text }) => text.length >= 20)
       ? "PDF ready. Plan checkpoints when ready."
@@ -92,15 +109,20 @@ async function warmTextModel() {
     return;
   }
   setStatus("Preparing Gemma text model in the background…");
-  updateModelProgress("Gemma model: preparing", 0, 0);
+  updateModelProgress(textModelProgress, textModelProgressBar, textModelProgressLabel,
+    "Text model: preparing", 0, 0);
   warmTextSessionPromise = createTextSession({
     onDownloadProgress: (loaded, total) => {
-      updateModelProgress("Gemma model: downloading", loaded, total);
+      updateModelProgress(textModelProgress, textModelProgressBar, textModelProgressLabel,
+        "Text model: downloading", loaded, total);
       setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
     }
   }).then((session) => {
     warmTextSession = session;
-    updateModelProgress("Gemma model: ready", 1, 1);
+    textModelReady = true;
+    updateModelProgress(textModelProgress, textModelProgressBar, textModelProgressLabel,
+      "Text model: ready", 1, 1);
+    updateButtonState();
     return session;
   }).finally(() => {
     warmTextSessionPromise = undefined;
@@ -108,7 +130,10 @@ async function warmTextModel() {
   try {
     await warmTextSessionPromise;
   } catch (error) {
-    updateModelProgress("Gemma model: unavailable", 0, 0);
+    textModelReady = false;
+    updateModelProgress(textModelProgress, textModelProgressBar, textModelProgressLabel,
+      "Text model: unavailable", 0, 0);
+    updateButtonState();
     console.warn("Gemma text model warm-up failed:", error);
   }
 }
@@ -124,7 +149,8 @@ async function acquireTextSession() {
   }
   return createTextSession({
     onDownloadProgress: (loaded, total) => {
-      updateModelProgress("Gemma model: downloading", loaded, total);
+      updateModelProgress(textModelProgress, textModelProgressBar, textModelProgressLabel,
+        "Text model: downloading", loaded, total);
       setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
     }
   });
@@ -144,17 +170,59 @@ async function createImageSession() {
     throw new Error(`Gemma image model is not ready (status: ${availability}).`);
   }
   setStatus("Preparing Gemma image model…");
-  updateModelProgress("Gemma model: preparing image model", 0, 0);
+  updateModelProgress(imageModelProgress, imageModelProgressBar, imageModelProgressLabel,
+    "Image model: preparing", 0, 0);
   return LanguageModel.create({
     expectedInputs: [{ type: "image" }],
     expectedOutputs: [{ type: "text", languages: ["en"] }],
     monitor(monitor) {
       monitor.addEventListener("downloadprogress", (event) => {
-        updateModelProgress("Gemma model: downloading image model", event.loaded, event.total);
+        updateModelProgress(imageModelProgress, imageModelProgressBar, imageModelProgressLabel,
+          "Image model: downloading", event.loaded, event.total);
         setStatus(`Downloading Gemma image model${formatDownloadProgress(event.loaded, event.total)}`);
       });
     }
   });
+}
+
+async function warmImageModel() {
+  if (warmImageSessionPromise || warmImageSession || !globalThis.LanguageModel) {
+    return;
+  }
+  warmImageSessionPromise = createImageSession().then((session) => {
+    warmImageSession = session;
+    imageModelReady = true;
+    updateModelProgress(imageModelProgress, imageModelProgressBar, imageModelProgressLabel,
+      "Image model: ready", 1, 1);
+    updateButtonState();
+    return session;
+  }).catch((error) => {
+    imageModelReady = false;
+    updateModelProgress(imageModelProgress, imageModelProgressBar, imageModelProgressLabel,
+      "Image model: unavailable", 0, 0);
+    updateButtonState();
+    console.warn("Gemma image model warm-up failed:", error);
+    throw error;
+  }).finally(() => {
+    warmImageSessionPromise = undefined;
+  });
+  try {
+    await warmImageSessionPromise;
+  } catch {
+    // The vision button remains disabled until a later reset/retry succeeds.
+  }
+}
+
+async function acquireImageSession() {
+  if (warmImageSessionPromise) {
+    await warmImageSessionPromise;
+  }
+  if (warmImageSession) {
+    const session = warmImageSession;
+    warmImageSession = undefined;
+    return session;
+  }
+  return createImageSession();
 }
 
 async function requestPlan(sections) {
@@ -311,7 +379,7 @@ visionButton.addEventListener("click", async () => {
   visionButton.disabled = true;
   planButton.disabled = true;
   try {
-    let session = await createImageSession();
+    let session = await acquireImageSession();
     const sections = [];
     for (const [index, page] of renderedPages.entries()) {
       try {
@@ -339,7 +407,7 @@ visionButton.addEventListener("click", async () => {
         console.warn(`Gemma could not read page ${page.pageNumber}:`, error);
         if (index < renderedPages.length - 1) {
           session.destroy();
-          session = await createImageSession();
+          session = await acquireImageSession();
         }
       }
     }
@@ -351,8 +419,7 @@ visionButton.addEventListener("click", async () => {
   } catch (error) {
     setStatus(`Gemma page vision failed: ${error.message || error}`);
   } finally {
-    planButton.disabled = false;
-    visionButton.disabled = false;
+    updateButtonState();
   }
 });
 
@@ -377,17 +444,28 @@ planButton.addEventListener("click", async () => {
   } catch (error) {
     setStatus(`Checkpoint generation failed: ${error.message || error}`);
   } finally {
-    planButton.disabled = false;
+    updateButtonState();
   }
 });
 
 resetButton.addEventListener("click", () => {
   warmTextSession?.destroy();
+  warmImageSession?.destroy();
   warmTextSession = undefined;
+  warmImageSession = undefined;
   warmTextSessionPromise = undefined;
+  warmImageSessionPromise = undefined;
+  textModelReady = false;
+  imageModelReady = false;
+  updateModelProgress(textModelProgress, textModelProgressBar, textModelProgressLabel,
+    "Text model: resetting", 0, 0);
+  updateModelProgress(imageModelProgress, imageModelProgressBar, imageModelProgressLabel,
+    "Image model: resetting", 0, 0);
+  updateButtonState();
   chrome.storage.local.remove(["checkpointMode"]);
   setStatus("Gemma session reset. Chrome manages the downloaded model cache.");
   warmTextModel();
+  warmImageModel();
 });
 
 if (sourceUrl) {
@@ -395,3 +473,4 @@ if (sourceUrl) {
 }
 
 warmTextModel();
+warmImageModel();

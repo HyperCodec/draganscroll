@@ -13,9 +13,13 @@
       <button id="plan" disabled>Generate checkpoints</button>
       <button id="vision" disabled>Generate scanned-page checkpoints with Gemma</button>
       <button id="reset" type="button">Reset Gemma session</button>
-      <div class="model-progress" aria-live="polite">
-        <span id="model-progress-label">Gemma model: starting</span>
-        <progress id="model-progress" max="1" value="0"></progress>
+      <div id="text-model-progress" class="model-progress" aria-live="polite">
+        <span id="text-model-progress-label">Text model: starting</span>
+        <progress id="text-model-progress-bar" max="1" value="0"></progress>
+      </div>
+      <div id="image-model-progress" class="model-progress" aria-live="polite">
+        <span id="image-model-progress-label">Image model: starting</span>
+        <progress id="image-model-progress-bar" max="1" value="0"></progress>
       </div>
       <span id="status" role="status">Choose a PDF to begin.</span>
     </header>

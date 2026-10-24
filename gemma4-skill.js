@@ -36,6 +36,12 @@ response. For short_answer, do not provide options or correctAnswers: explanatio
 enough to assess why a reader's response is correct, partially correct, or incorrect. Never invent
 information, and prefer one focused question over several loosely related questions.`;
 
+const CONTENT_FOCUS_INSTRUCTIONS = `Focus on understanding the content, not merely its tone or
+style. Ask about concrete events, claims, evidence, definitions, mechanisms, relationships,
+causes and effects, procedures, or what a character/person does and why. Do not ask about tone,
+mood, genre, writing style, or authorial voice unless the context explicitly makes that the subject.
+All question text, options, answers, and explanations must be in English.`;
+
 function extractJson(value) {
   const text = String(value || "").trim();
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -60,6 +66,10 @@ function normalizeCheckpoint(raw) {
   if (!checkpoint.question || !checkpoint.explanation) {
     throw new Error("Gemma returned an incomplete checkpoint.");
   }
+  const generatedText = `${checkpoint.question} ${checkpoint.explanation}`;
+  if (/[\u3400-\u9fff\u3040-\u30ff\u0400-\u04ff]/u.test(generatedText)) {
+    throw new Error("Gemma returned checkpoint content in a non-English script.");
+  }
   if (raw.type === "short_answer") {
     return checkpoint;
   }
@@ -81,11 +91,15 @@ function normalizeCheckpoint(raw) {
       correctAnswers.length !== 1) {
     throw new Error("A true/false checkpoint must have exactly one correct answer.");
   }
+  if (/[\u3400-\u9fff\u3040-\u30ff\u0400-\u04ff]/u.test(options.join(" "))) {
+    throw new Error("Gemma returned checkpoint content in a non-English script.");
+  }
   return { ...checkpoint, options, correctAnswers };
 }
 
 function buildCheckpointPrompt({ context, previousSummary = "" }) {
   return `${CHECKPOINT_GENERATION_SKILL}
+  ${CONTENT_FOCUS_INSTRUCTIONS}
 
 Previous reading summary (optional):
 ${previousSummary || "(none)"}
@@ -136,8 +150,19 @@ async function createTextSession({ onDownloadProgress } = {}) {
 }
 
 async function generateCheckpoint(session, input) {
-  const response = await session.prompt(buildCheckpointPrompt(input));
-  return normalizeCheckpoint(extractJson(response));
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await session.prompt(
+        `${buildCheckpointPrompt(input)}
+${attempt ? `\nCorrection required: ${lastError.message} Return a new English content-focused checkpoint.` : ""}`
+      );
+      return normalizeCheckpoint(extractJson(response));
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 async function updateReadingSummary(session, input) {
