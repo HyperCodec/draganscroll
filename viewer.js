@@ -13,6 +13,8 @@ const fileInput = document.querySelector("#file");
 const planButton = document.querySelector("#plan");
 const visionButton = document.querySelector("#vision");
 const resetButton = document.querySelector("#reset");
+const modelProgress = document.querySelector("#model-progress");
+const modelProgressLabel = document.querySelector("#model-progress-label");
 const status = document.querySelector("#status");
 const pages = document.querySelector("#pages");
 const sourceUrl = new URLSearchParams(window.location.search).get("url");
@@ -27,6 +29,12 @@ function setStatus(message) {
 function formatDownloadProgress(loaded, total) {
   const fraction = total ? loaded / total : loaded <= 1 ? loaded : 0;
   return fraction > 0 ? ` (${Math.round(fraction * 100)}%)` : "…";
+}
+
+function updateModelProgress(label, loaded, total) {
+  const fraction = total ? loaded / total : loaded <= 1 ? loaded : 0;
+  modelProgress.value = Math.max(0, Math.min(1, fraction));
+  modelProgressLabel.textContent = `${label}${fraction > 0 ? ` (${Math.round(fraction * 100)}%)` : ""}`;
 }
 
 async function renderPdf(source) {
@@ -77,70 +85,76 @@ async function loadSource(source) {
     visionButton.disabled = true;
     setStatus(`Unable to load PDF: ${error.message || error}`);
   }
+}
 
-  async function warmTextModel() {
-    if (warmTextSessionPromise || warmTextSession) {
-      return;
-    }
-    setStatus("Preparing Gemma text model in the background…");
-    warmTextSessionPromise = createTextSession({
-      onDownloadProgress: (loaded, total) => {
-        setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
-      }
-    }).then((session) => {
-      warmTextSession = session;
-      return session;
-    }).finally(() => {
-      warmTextSessionPromise = undefined;
-    });
-    try {
-      await warmTextSessionPromise;
-    } catch (error) {
-      warmTextSessionPromise = undefined;
-      console.warn("Gemma text model warm-up failed:", error);
-    }
+async function warmTextModel() {
+  if (warmTextSessionPromise || warmTextSession || !globalThis.LanguageModel) {
+    return;
   }
+  setStatus("Preparing Gemma text model in the background…");
+  updateModelProgress("Gemma model: preparing", 0, 0);
+  warmTextSessionPromise = createTextSession({
+    onDownloadProgress: (loaded, total) => {
+      updateModelProgress("Gemma model: downloading", loaded, total);
+      setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
+    }
+  }).then((session) => {
+    warmTextSession = session;
+    updateModelProgress("Gemma model: ready", 1, 1);
+    return session;
+  }).finally(() => {
+    warmTextSessionPromise = undefined;
+  });
+  try {
+    await warmTextSessionPromise;
+  } catch (error) {
+    updateModelProgress("Gemma model: unavailable", 0, 0);
+    console.warn("Gemma text model warm-up failed:", error);
+  }
+}
 
-  async function acquireTextSession() {
-    if (warmTextSessionPromise) {
-      await warmTextSessionPromise;
-    }
-    if (warmTextSession) {
-      const session = warmTextSession;
-      warmTextSession = undefined;
-      return session;
-    }
-    return createTextSession({
-      onDownloadProgress: (loaded, total) => {
-        setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
-      }
-    });
+async function acquireTextSession() {
+  if (warmTextSessionPromise) {
+    await warmTextSessionPromise;
   }
+  if (warmTextSession) {
+    const session = warmTextSession;
+    warmTextSession = undefined;
+    return session;
+  }
+  return createTextSession({
+    onDownloadProgress: (loaded, total) => {
+      updateModelProgress("Gemma model: downloading", loaded, total);
+      setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
+    }
+  });
+}
 
-  async function createImageSession() {
-    const availability = await LanguageModel.availability({
-      expectedInputs: [{ type: "image" }],
-      expectedOutputs: [{ type: "text", languages: ["en"] }]
-    });
-    if (availability === "unavailable") {
-      throw new Error(
-        "Gemma image generation is unavailable in this browser. Use Chrome with on-device Gemini Nano enabled."
-      );
-    }
-    if (!["available", "downloadable", "downloading"].includes(availability)) {
-      throw new Error(`Gemma image model is not ready (status: ${availability}).`);
-    }
-    setStatus("Preparing Gemma image model…");
-    return LanguageModel.create({
-      expectedInputs: [{ type: "image" }],
-      expectedOutputs: [{ type: "text", languages: ["en"] }],
-      monitor(monitor) {
-        monitor.addEventListener("downloadprogress", (event) => {
-          setStatus(`Downloading Gemma image model${formatDownloadProgress(event.loaded, event.total)}`);
-        });
-      }
-    });
+async function createImageSession() {
+  const availability = await LanguageModel.availability({
+    expectedInputs: [{ type: "image" }],
+    expectedOutputs: [{ type: "text", languages: ["en"] }]
+  });
+  if (availability === "unavailable") {
+    throw new Error(
+      "Gemma image generation is unavailable in this browser. Use Chrome with on-device Gemini Nano enabled."
+    );
   }
+  if (!["available", "downloadable", "downloading"].includes(availability)) {
+    throw new Error(`Gemma image model is not ready (status: ${availability}).`);
+  }
+  setStatus("Preparing Gemma image model…");
+  updateModelProgress("Gemma model: preparing image model", 0, 0);
+  return LanguageModel.create({
+    expectedInputs: [{ type: "image" }],
+    expectedOutputs: [{ type: "text", languages: ["en"] }],
+    monitor(monitor) {
+      monitor.addEventListener("downloadprogress", (event) => {
+        updateModelProgress("Gemma model: downloading image model", event.loaded, event.total);
+        setStatus(`Downloading Gemma image model${formatDownloadProgress(event.loaded, event.total)}`);
+      });
+    }
+  });
 }
 
 async function requestPlan(sections) {

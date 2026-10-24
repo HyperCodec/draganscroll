@@ -40,6 +40,20 @@ button:disabled {
   color: #cbd5e1;
 }
 
+.model-progress {
+  display: grid;
+  min-width: 170px;
+  gap: 3px;
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+#model-progress {
+  width: 170px;
+  height: 6px;
+  accent-color: #38bdf8;
+}
+
 #pages {
   display: grid;
   justify-items: center;
