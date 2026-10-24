@@ -21,6 +21,11 @@ function setStatus(message) {
   status.textContent = message;
 }
 
+function formatDownloadProgress(loaded, total) {
+  const fraction = total ? loaded / total : loaded <= 1 ? loaded : 0;
+  return fraction > 0 ? ` (${Math.round(fraction * 100)}%)` : "…";
+}
+
 async function renderPdf(source) {
   planButton.disabled = true;
   pages.replaceChildren();
@@ -146,10 +151,10 @@ function addCheckpointCard(page, checkpoint, checkpointIndex, context) {
       submit.disabled = true;
       feedback.textContent = "Gemma is evaluating your answer…";
       try {
+        feedback.textContent = "Preparing Gemma model…";
         const session = await createTextSession({
           onDownloadProgress: (loaded, total) => {
-            const percent = total ? Math.round((loaded / total) * 100) : 0;
-            feedback.textContent = `Downloading Gemma model${percent ? ` (${percent}%)` : "…"}`;
+            feedback.textContent = `Downloading Gemma model${formatDownloadProgress(loaded, total)}`;
           }
         });
         try {
@@ -186,10 +191,10 @@ async function planAndGenerate(sections, emptyMessage) {
     setStatus(emptyMessage);
     return;
   }
+  setStatus("Preparing Gemma text model…");
   const session = await createTextSession({
     onDownloadProgress: (loaded, total) => {
-      const percent = total ? Math.round((loaded / total) * 100) : 0;
-      setStatus(`Downloading Gemma text model${percent ? ` (${percent}%)` : "…"}`);
+      setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
     }
   });
   let previousSectionIndex = 0;
@@ -235,14 +240,27 @@ visionButton.addEventListener("click", async () => {
   try {
     const availability = await LanguageModel.availability({
       expectedInputs: [{ type: "image" }],
-      expectedOutputs: [{ type: "text" }]
+      expectedOutputs: [{ type: "text" }],
+      outputLanguage: "en"
     });
-    if (availability !== "available") {
+    if (availability === "unavailable") {
+      throw new Error(
+        "Gemma image generation is unavailable in this browser. Use Chrome with on-device Gemini Nano enabled."
+      );
+    }
+    if (!["available", "downloadable", "downloading"].includes(availability)) {
       throw new Error(`Gemma image model is not ready (status: ${availability}).`);
     }
+    setStatus("Preparing Gemma image model…");
     const session = await LanguageModel.create({
       expectedInputs: [{ type: "image" }],
-      expectedOutputs: [{ type: "text" }]
+      expectedOutputs: [{ type: "text" }],
+      outputLanguage: "en",
+      monitor(monitor) {
+        monitor.addEventListener("downloadprogress", (event) => {
+          setStatus(`Downloading Gemma image model${formatDownloadProgress(event.loaded, event.total)}`);
+        });
+      }
     });
     const sections = [];
     for (const [index, page] of renderedPages.entries()) {

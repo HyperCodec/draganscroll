@@ -114,7 +114,8 @@ async function createTextSession({ onDownloadProgress } = {}) {
   }
   const availability = await LanguageModel.availability({
     expectedInputs: [{ type: "text" }],
-    expectedOutputs: [{ type: "text" }]
+    expectedOutputs: [{ type: "text" }],
+    outputLanguage: "en"
   });
   if (availability === "unavailable") {
     throw new Error(
@@ -127,6 +128,7 @@ async function createTextSession({ onDownloadProgress } = {}) {
   return LanguageModel.create({
     expectedInputs: [{ type: "text" }],
     expectedOutputs: [{ type: "text" }],
+    outputLanguage: "en",
     monitor(monitor) {
       monitor.addEventListener("downloadprogress", (event) => {
         onDownloadProgress?.(event.loaded, event.total);
