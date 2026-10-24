@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DraganScroll - PDF Reader</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #toolbar {
+            padding: 10px;
+            background: #333;
+            color: white;
+            display: flex;
+            gap: 10px;
+        }
+        #viewer-container {
+            flex-grow: 1;
+            overflow: auto;
+            background: #eee;
+            position: relative;
+        }
+        #canvas-container {
+            margin: 20px auto;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <input type="file" id="file-input" accept="application/pdf" />
+        <span id="status">Load a PDF to begin</span>
+    </div>
+    <div id="viewer-container">
+        <div id="canvas-container"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const status = document.getElementById('status');
+        const container = document.getElementById('canvas-container');
+
+        // Configure PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            status.innerText = "Loading PDF...";
+            const reader = new FileReader();
+            reader.onload = async function() {
+                const typedarray = new Uint8Array(this.result);
+                const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                status.innerText = `Loaded: ${pdf.numPages} pages`;
+                renderPage(pdf, 1);
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        async function renderPage(pdf, pageNum) {
+            const page = await pdf.getPage(pageNum);
+            const viewport = page.getViewport({ scale: 1.5 });
+            
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            
+            container.innerHTML = '';
+            container.appendChild(canvas);
+            
+            const renderContext = {
+                canvasContext: context,
+                viewport: viewport
+            };
+            
+            await page.render(renderContext).promise;
+        }
+    </script>
+</body>
+</html>
