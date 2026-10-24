@@ -68,3 +68,53 @@ button:disabled {
   color: #78350f;
   font-weight: 600;
 }
+
+.checkpoint-card {
+  margin: 16px;
+  padding: 14px;
+  border: 2px solid #f59e0b;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #78350f;
+}
+
+.checkpoint-card p {
+  margin: 8px 0;
+}
+
+.checkpoint-options {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.checkpoint-options label {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.checkpoint-answer {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 8px 0;
+  padding: 8px;
+  font: inherit;
+}
+
+.checkpoint-card button {
+  background: #b45309;
+}
+
+.checkpoint-feedback {
+  min-height: 1.2em;
+  margin-bottom: 0;
+}
+
+.checkpoint-feedback.correct {
+  color: #166534;
+}
+
+.checkpoint-feedback.incorrect {
+  color: #991b1b;
+}

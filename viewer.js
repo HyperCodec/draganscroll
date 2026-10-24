@@ -1,5 +1,11 @@
 import * as pdfjsLib from "./vendor/pdf.min.mjs";
-import { planCheckpoints } from "./gemma4-skill.js";
+import {
+  createTextSession,
+  evaluateShortAnswer,
+  generateCheckpoint,
+  planCheckpoints,
+  updateReadingSummary
+} from "./gemma4-skill.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdf.worker.min.mjs");
 
@@ -83,6 +89,125 @@ async function requestPlan(sections) {
   return planCheckpoints(sections);
 }
 
+function checkpointContext(sections, sectionIndex, previousSectionIndex) {
+  return sections
+    .slice(Math.max(0, previousSectionIndex), Math.min(sections.length - 1, sectionIndex) + 1)
+    .map(({ pageNumber, text }) => `[Page ${pageNumber}]\n${text}`)
+    .join("\n\n")
+    .slice(0, 12000);
+}
+
+function addCheckpointCard(page, checkpoint, checkpointIndex, context) {
+  const card = document.createElement("section");
+  card.className = "checkpoint-card";
+  const title = document.createElement("strong");
+  title.textContent = `Checkpoint ${checkpointIndex + 1} · ${checkpoint.type.replace("_", " ")}`;
+  const question = document.createElement("p");
+  question.textContent = checkpoint.question;
+  card.append(title, question);
+
+  let controls;
+  if (checkpoint.type === "short_answer") {
+    controls = document.createElement("textarea");
+    controls.rows = 3;
+    controls.placeholder = "Write your answer…";
+    controls.className = "checkpoint-answer";
+  } else {
+    controls = document.createElement("div");
+    controls.className = "checkpoint-options";
+    const useCheckboxes = checkpoint.type === "checklist" || checkpoint.correctAnswers.length > 1;
+    checkpoint.options.forEach((option, optionIndex) => {
+      const label = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = useCheckboxes ? "checkbox" : "radio";
+      input.name = `checkpoint-${checkpointIndex}`;
+      input.value = option;
+      input.id = `checkpoint-${checkpointIndex}-${optionIndex}`;
+      const text = document.createElement("span");
+      text.textContent = option;
+      label.append(input, text);
+      controls.append(label);
+    });
+  }
+
+  const submit = document.createElement("button");
+  submit.type = "button";
+  submit.textContent = "Check answer";
+  const feedback = document.createElement("p");
+  feedback.className = "checkpoint-feedback";
+  submit.addEventListener("click", async () => {
+    if (checkpoint.type === "short_answer") {
+      const answer = controls.value.trim();
+      if (!answer) {
+        feedback.textContent = "Write an answer before checking it.";
+        feedback.className = "checkpoint-feedback incorrect";
+        return;
+      }
+      submit.disabled = true;
+      feedback.textContent = "Gemma is evaluating your answer…";
+      try {
+        const session = await createTextSession();
+        try {
+          feedback.textContent = await evaluateShortAnswer(session, {
+            checkpoint,
+            answer,
+            context
+          });
+          feedback.className = "checkpoint-feedback";
+        } finally {
+          session.destroy();
+        }
+      } catch (error) {
+        feedback.textContent = `Unable to evaluate the answer: ${error.message || error}`;
+        feedback.className = "checkpoint-feedback incorrect";
+      } finally {
+        submit.disabled = false;
+      }
+      return;
+    }
+    const answer = [...controls.querySelectorAll("input:checked")].map((input) => input.value);
+    const correct = answer.length === checkpoint.correctAnswers.length &&
+      answer.every((value) => checkpoint.correctAnswers.includes(value));
+    feedback.textContent = correct ? "Correct." : `Not quite. ${checkpoint.explanation}`;
+    feedback.className = `checkpoint-feedback ${correct ? "correct" : "incorrect"}`;
+  });
+  card.append(controls, submit, feedback);
+  page.container.append(card);
+}
+
+async function planAndGenerate(sections, emptyMessage) {
+  const plan = await requestPlan(sections);
+  if (!plan.checkpoints.length) {
+    setStatus(emptyMessage);
+    return;
+  }
+  const session = await createTextSession();
+  let previousSectionIndex = 0;
+  let previousSummary = "";
+  try {
+    for (const [checkpointIndex, planned] of plan.checkpoints.entries()) {
+      const sectionIndex = sections.findIndex(({ index }) => index === planned.sectionIndex);
+      if (sectionIndex < 0) {
+        continue;
+      }
+      const context = checkpointContext(sections, sectionIndex, previousSectionIndex);
+      setStatus(`Gemma is generating checkpoint ${checkpointIndex + 1} of ${plan.checkpoints.length}…`);
+      const checkpoint = await generateCheckpoint(session, { context, previousSummary });
+      const page = renderedPages.find(({ pageNumber }) =>
+        pageNumber === sections[sectionIndex].pageNumber
+      );
+      if (page) {
+        addCheckpointCard(page, checkpoint, checkpointIndex, context);
+      }
+      previousSummary = await updateReadingSummary(session, { context, previousSummary });
+      previousSectionIndex = sectionIndex + 1;
+    }
+  } finally {
+    session.destroy();
+  }
+  setStatus(`${plan.checkpoints.length} Gemma checkpoints added.`);
+}
+
 fileInput.addEventListener("change", async () => {
   const [file] = fileInput.files || [];
   if (file) {
@@ -133,18 +258,7 @@ visionButton.addEventListener("click", async () => {
     if (sections.length < 2) {
       throw new Error("Gemma found fewer than two readable page sections.");
     }
-    const plan = await requestPlan(sections);
-    plan.checkpoints.forEach(({ sectionIndex, reason }, checkpointIndex) => {
-      const section = sections[sectionIndex];
-      const page = renderedPages.find(({ pageNumber }) => pageNumber === section?.pageNumber);
-      if (page) {
-        const marker = document.createElement("div");
-        marker.className = "checkpoint";
-        marker.textContent = `Checkpoint ${checkpointIndex + 1}: ${reason}`;
-        page.container.appendChild(marker);
-      }
-    });
-    setStatus(`${plan.checkpoints.length} checkpoints added from Gemma page vision.`);
+    await planAndGenerate(sections, "No checkpoint boundaries were found.");
   } catch (error) {
     setStatus(`Gemma page vision failed: ${error.message || error}`);
   } finally {
@@ -170,20 +284,7 @@ planButton.addEventListener("click", async () => {
   planButton.disabled = true;
   setStatus("Planning checkpoint boundaries…");
   try {
-    const plan = await requestPlan(sections);
-    plan.checkpoints.forEach(({ sectionIndex, reason }, checkpointIndex) => {
-      const section = sections[sectionIndex];
-      const page = renderedPages.find(({ pageNumber }) => pageNumber === section?.pageNumber);
-      if (!page) {
-        return;
-      }
-      const marker = document.createElement("div");
-      marker.className = "checkpoint";
-      marker.textContent = `Checkpoint ${checkpointIndex + 1}: ${reason}`;
-      marker.style.top = "0";
-      page.container.appendChild(marker);
-    });
-    setStatus(`${plan.checkpoints.length} checkpoints added to the viewer.`);
+    await planAndGenerate(sections, "No checkpoint boundaries were found.");
   } catch (error) {
     setStatus(`Checkpoint planning failed: ${error.message || error}`);
   } finally {

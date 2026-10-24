@@ -8,7 +8,7 @@ This repository now includes a minimal Manifest V3 extension:
 
 - `manifest.json` (MV3 config)
 - `background.js` (Gemma 4 checkpoint planning message handler)
-- `gemma4-skill.js` (Gemma 4 4B thinking model metadata and checkpoint-planning skill)
+- `gemma4-skill.js` (Gemma 4 metadata, planning, checkpoint-generation, and rolling-summary skills)
 - `content-script.js` (plans and inserts document-anchored checkpoint placeholders)
 - `popup.html` / `popup.js` (basic extension status UI)
 - `viewer.html` / `viewer.js` (extension-owned PDF.js viewer with checkpoint overlays)
@@ -29,7 +29,12 @@ This repository now includes a minimal Manifest V3 extension:
   boundaries between significant portions.
 - The viewer can send rendered page images directly to Chrome's built-in multimodal
   Gemma API for scanned pages when the browser has the on-device image model available.
-- It inserts placeholder checkpoints only. It does not generate questions or answers.
+- The viewer generates interactive checklist, multiple-choice (including true/false), and short-answer
+  checkpoints with Gemma. Closed-option answers are validated against the generated options, and
+  incorrect answers receive the generated explanation.
+- Each checkpoint uses the PDF text from the previous checkpoint boundary through the current
+  boundary. A bounded rolling summary is carried forward so older sections remain available without
+  filling the model context window.
 - The planner currently uses a deterministic fallback behind a Gemma 4-compatible skill
   interface; the local Gemma 4 runtime can be connected in `gemma4-skill.js`.
 
@@ -39,4 +44,4 @@ analyzed through Gemma image input. The browser's native PDF viewer remains unsu
 ## Intended next steps
 
 - Connect the `planCheckpoints` adapter to in-browser Gemma 4 inference.
-- Generate questions only when a reader reaches a placeholder.
+- Connect checkpoint planning itself to Gemma rather than the deterministic placement fallback.
