@@ -265,6 +265,10 @@ function checkpointContext(sections, sectionIndex, previousSectionIndex) {
     .slice(Math.max(0, previousSectionIndex), Math.min(sections.length - 1, sectionIndex) + 1)
     .map(({ pageNumber, text }) => `[Page ${pageNumber}]\n${text}`)
     .join("\n\n")
+    // Convert double quotes to single quotes so Gemma doesn't copy them and break JSON
+    .replace(/"/g, "'") 
+    // Remove unprintable control characters that might confuse the model
+    .replace(/[\u0000-\u001F]+/g, " ") 
     .slice(0, 12000);
 }
 

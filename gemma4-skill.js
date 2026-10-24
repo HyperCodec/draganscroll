@@ -27,6 +27,8 @@ Return JSON only:
   {"type":"short_answer","question":"...","explanation":"..."}
 ]}
 
+CRITICAL: Ensure all JSON is strictly valid. You MUST properly escape all double quotes inside your string values (e.g., use \\" instead of ") or use single quotes for quotes within strings. Do not include unescaped newlines in strings.
+
 Every checkpoint must contain exactly 3 distinct questions: exactly one checklist, exactly one
 multiple_choice, and exactly one short_answer, in any order. The type belongs on each question,
 not on the checkpoint. Use multiple_choice for true/false when appropriate.
@@ -54,7 +56,16 @@ function extractJson(value) {
   if (start < 0 || end <= start) {
     throw new Error("Gemma did not return checkpoint JSON.");
   }
-  return JSON.parse(candidate.slice(start, end + 1));
+  
+  let jsonString = candidate.slice(start, end + 1);
+  
+  // Clean up control characters
+  jsonString = jsonString.replace(/[\u0000-\u0019]+/g, "");
+  
+  // Automatically fix trailing commas (e.g., "}, ]" becomes "} ]")
+  jsonString = jsonString.replace(/,\s*([\]}])/g, "$1");
+  
+  return JSON.parse(jsonString);
 }
 
 function normalizeCheckpoint(raw) {
@@ -167,18 +178,26 @@ async function createTextSession({ onDownloadProgress } = {}) {
 
 async function generateCheckpoint(session, input) {
   let lastError;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const maxAttempts = 3; 
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let rawResponse = ""; // Declare outside so we can log it on failure
     try {
-      const response = await session.prompt(
-        `${buildCheckpointPrompt(input)}
-${attempt ? `\nCorrection required: ${lastError.message} Return a new English content-focused checkpoint.` : ""}`
+      const retryPrompt = attempt 
+        ? `\n\nCRITICAL CORRECTION REQUIRED: Your previous output failed to parse as valid JSON. The parser threw this error: "${lastError.message}". You MUST fix the syntax error. Ensure all internal double quotes within strings are escaped as \\", remove any trailing commas, and do not use unescaped line breaks inside string values. Return ONLY valid JSON.` 
+        : "";
+
+      rawResponse = await session.prompt(
+        `${buildCheckpointPrompt(input)}${retryPrompt}`
       );
-      return normalizeCheckpoint(extractJson(response));
+      return normalizeCheckpoint(extractJson(rawResponse));
     } catch (error) {
       lastError = error;
+      console.warn(`Checkpoint generation attempt ${attempt + 1} failed:`, error.message);
+      console.warn("Raw model response:\n", rawResponse);
     }
   }
-  throw lastError;
+  throw new Error(`Failed to generate valid checkpoint JSON after ${maxAttempts} attempts. Last error: ${lastError.message}`);
 }
 
 async function updateReadingSummary(session, input) {
