@@ -34,7 +34,8 @@ function getSections() {
   }
 
   const documentText = document.body?.innerText || document.body?.textContent || "";
-  if (normalizeText(documentText).length < 160) {
+  const normalizedDocumentText = normalizeText(documentText);
+  if (normalizedDocumentText.length < 160) {
     return [];
   }
 
@@ -52,7 +53,20 @@ function getSections() {
     }, [])
     .filter((text) => text.length >= 80);
 
-  return chunks.map((text, index) => createSection(document.body, false, text, index));
+  if (chunks.length >= 2) {
+    return chunks.map((text, index) => createSection(document.body, false, text, index));
+  }
+
+  const words = normalizedDocumentText.split(" ");
+  const wordCountPerSection = Math.max(40, Math.ceil(words.length / 8));
+  const fixedChunks = [];
+  for (let index = 0; index < words.length; index += wordCountPerSection) {
+    const text = words.slice(index, index + wordCountPerSection).join(" ");
+    if (text.length >= 80) {
+      fixedChunks.push(text);
+    }
+  }
+  return fixedChunks.map((text, index) => createSection(document.body, false, text, index));
 }
 
 function waitForSections(attempt = 0) {
@@ -120,7 +134,15 @@ async function planPlaceholders() {
 
   const sections = await waitForSections();
   if (sections.length < 2) {
-    showStatus("No readable sections were found for checkpoint planning.", true);
+    const isNativePdfViewer =
+      document.querySelector('embed[type="application/pdf"], object[type="application/pdf"]') &&
+      normalizeText(document.body?.innerText || document.body?.textContent || "").length < 160;
+    showStatus(
+      isNativePdfViewer
+        ? "This PDF viewer does not expose readable text. Open the PDF in a text-layer viewer to use checkpoints."
+        : "No readable sections were found for checkpoint planning.",
+      true
+    );
     return;
   }
 
