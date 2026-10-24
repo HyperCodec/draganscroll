@@ -25,9 +25,16 @@ This repository now includes a minimal Manifest V3 extension:
 - On a readable PDF page, the extension waits for asynchronously rendered PDF text,
   identifies substantial text sections (including generic PDF text layers), and plans
   boundaries between significant portions.
+- The popup can OCR the visible page using the bundled Tesseract.js runtime. This works
+  for scanned PDFs and native browser PDF viewers; English language data is downloaded
+  the first time OCR is used.
 - It inserts placeholder checkpoints only. It does not generate questions or answers.
 - The planner currently uses a deterministic fallback behind a Gemma 4-compatible skill
   interface; the local Gemma 4 runtime can be connected in `gemma4-skill.js`.
+
+Native browser PDF viewers do not expose their internal text layer or DOM to extensions,
+so OCR results and checkpoint reasons are shown in the popup instead of being inserted
+into the viewer. DOM placeholders remain available on pages with an accessible text layer.
 
 ## Intended next steps
 

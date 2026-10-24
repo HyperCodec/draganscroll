@@ -143,7 +143,7 @@ async function planPlaceholders() {
         : "No readable sections were found for checkpoint planning.",
       true
     );
-    return;
+    return false;
   }
 
   chrome.runtime.sendMessage(
@@ -166,6 +166,7 @@ async function planPlaceholders() {
       showStatus(`${response?.plan?.checkpoints?.length || 0} checkpoint placeholders added.`);
     }
   );
+  return true;
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -174,7 +175,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   planPlaceholders()
-    .then(() => sendResponse({ ok: true }))
+    .then((planned) => sendResponse({ ok: planned, readable: planned }))
     .catch((error) => {
       console.error("Unable to plan document checkpoints", error);
       sendResponse({ error: "Checkpoint planning failed." });

@@ -31,6 +31,10 @@
         cursor: default;
         opacity: 0.6;
       }
+      #ocr {
+        margin-top: 8px;
+        background: #475569;
+      }
       #status {
         color: #334155;
       }
@@ -41,7 +45,10 @@
     <p>Gemma 4 plans checkpoint locations at significant reading boundaries.</p>
     <p>Placeholders are added first; questions are generated in a later step.</p>
     <button id="plan">Plan checkpoints for this tab</button>
+    <button id="ocr">OCR the visible PDF page</button>
     <p id="status" role="status"></p>
+    <div id="results"></div>
+    <script src="vendor/tesseract.min.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
