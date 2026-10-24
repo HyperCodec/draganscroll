@@ -146,7 +146,12 @@ function addCheckpointCard(page, checkpoint, checkpointIndex, context) {
       submit.disabled = true;
       feedback.textContent = "Gemma is evaluating your answer…";
       try {
-        const session = await createTextSession();
+        const session = await createTextSession({
+          onDownloadProgress: (loaded, total) => {
+            const percent = total ? Math.round((loaded / total) * 100) : 0;
+            feedback.textContent = `Downloading Gemma model${percent ? ` (${percent}%)` : "…"}`;
+          }
+        });
         try {
           feedback.textContent = await evaluateShortAnswer(session, {
             checkpoint,
@@ -181,7 +186,12 @@ async function planAndGenerate(sections, emptyMessage) {
     setStatus(emptyMessage);
     return;
   }
-  const session = await createTextSession();
+  const session = await createTextSession({
+    onDownloadProgress: (loaded, total) => {
+      const percent = total ? Math.round((loaded / total) * 100) : 0;
+      setStatus(`Downloading Gemma text model${percent ? ` (${percent}%)` : "…"}`);
+    }
+  });
   let previousSectionIndex = 0;
   let previousSummary = "";
   try {
@@ -286,7 +296,7 @@ planButton.addEventListener("click", async () => {
   try {
     await planAndGenerate(sections, "No checkpoint boundaries were found.");
   } catch (error) {
-    setStatus(`Checkpoint planning failed: ${error.message || error}`);
+    setStatus(`Checkpoint generation failed: ${error.message || error}`);
   } finally {
     planButton.disabled = false;
   }

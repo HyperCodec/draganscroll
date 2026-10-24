@@ -108,7 +108,7 @@ New context:
 ${context}`;
 }
 
-async function createTextSession() {
+async function createTextSession({ onDownloadProgress } = {}) {
   if (!globalThis.LanguageModel) {
     throw new Error("This browser does not expose the Gemma text API.");
   }
@@ -116,12 +116,22 @@ async function createTextSession() {
     expectedInputs: [{ type: "text" }],
     expectedOutputs: [{ type: "text" }]
   });
-  if (availability !== "available") {
+  if (availability === "unavailable") {
+    throw new Error(
+      "Gemma text generation is unavailable in this browser. Use a Chrome build with the Prompt API and on-device Gemini Nano enabled."
+    );
+  }
+  if (!["available", "downloadable", "downloading"].includes(availability)) {
     throw new Error(`Gemma text model is not ready (status: ${availability}).`);
   }
   return LanguageModel.create({
     expectedInputs: [{ type: "text" }],
-    expectedOutputs: [{ type: "text" }]
+    expectedOutputs: [{ type: "text" }],
+    monitor(monitor) {
+      monitor.addEventListener("downloadprogress", (event) => {
+        onDownloadProgress?.(event.loaded, event.total);
+      });
+    }
   });
 }
 
