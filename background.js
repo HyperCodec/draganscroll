@@ -9,14 +9,15 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "planCheckpoints" || !Array.isArray(message.sections)) {
-    return;
+    return false;
   }
 
-  planCheckpoints(message.sections)
+  Promise.resolve()
+    .then(() => planCheckpoints(message.sections))
     .then((plan) => sendResponse({ plan }))
     .catch((error) => {
       console.error("Unable to plan checkpoints", error);
-      sendResponse({ error: "Unable to plan checkpoints." });
+      sendResponse({ error: error?.message || "Unable to plan checkpoints." });
     });
 
   return true;

@@ -1,4 +1,5 @@
 import * as pdfjsLib from "./vendor/pdf.min.mjs";
+import { planCheckpoints } from "./gemma4-skill.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdf.worker.min.mjs");
 
@@ -64,6 +65,24 @@ async function loadSource(source) {
   }
 }
 
+async function requestPlan(sections) {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "planCheckpoints",
+      sections
+    });
+    if (response?.plan && Array.isArray(response.plan.checkpoints)) {
+      return response.plan;
+    }
+    if (response?.error) {
+      throw new Error(response.error);
+    }
+  } catch (error) {
+    console.warn("Background planner unavailable; using the bundled planner.", error);
+  }
+  return planCheckpoints(sections);
+}
+
 fileInput.addEventListener("change", async () => {
   const [file] = fileInput.files || [];
   if (file) {
@@ -114,11 +133,8 @@ visionButton.addEventListener("click", async () => {
     if (sections.length < 2) {
       throw new Error("Gemma found fewer than two readable page sections.");
     }
-    const response = await chrome.runtime.sendMessage({ type: "planCheckpoints", sections });
-    if (response?.error) {
-      throw new Error(response.error);
-    }
-    response.plan.checkpoints.forEach(({ sectionIndex, reason }, checkpointIndex) => {
+    const plan = await requestPlan(sections);
+    plan.checkpoints.forEach(({ sectionIndex, reason }, checkpointIndex) => {
       const section = sections[sectionIndex];
       const page = renderedPages.find(({ pageNumber }) => pageNumber === section?.pageNumber);
       if (page) {
@@ -128,7 +144,7 @@ visionButton.addEventListener("click", async () => {
         page.container.appendChild(marker);
       }
     });
-    setStatus(`${response.plan.checkpoints.length} checkpoints added from Gemma page vision.`);
+    setStatus(`${plan.checkpoints.length} checkpoints added from Gemma page vision.`);
   } catch (error) {
     setStatus(`Gemma page vision failed: ${error.message || error}`);
   } finally {
@@ -154,14 +170,8 @@ planButton.addEventListener("click", async () => {
   planButton.disabled = true;
   setStatus("Planning checkpoint boundaries…");
   try {
-    const response = await chrome.runtime.sendMessage({
-      type: "planCheckpoints",
-      sections
-    });
-    if (response?.error) {
-      throw new Error(response.error);
-    }
-    response.plan.checkpoints.forEach(({ sectionIndex, reason }, checkpointIndex) => {
+    const plan = await requestPlan(sections);
+    plan.checkpoints.forEach(({ sectionIndex, reason }, checkpointIndex) => {
       const section = sections[sectionIndex];
       const page = renderedPages.find(({ pageNumber }) => pageNumber === section?.pageNumber);
       if (!page) {
@@ -173,7 +183,7 @@ planButton.addEventListener("click", async () => {
       marker.style.top = "0";
       page.container.appendChild(marker);
     });
-    setStatus(`${response.plan.checkpoints.length} checkpoints added to the viewer.`);
+    setStatus(`${plan.checkpoints.length} checkpoints added to the viewer.`);
   } catch (error) {
     setStatus(`Checkpoint planning failed: ${error.message || error}`);
   } finally {
