@@ -18,12 +18,30 @@
         padding: 2px 4px;
         border-radius: 4px;
       }
+      button {
+        width: 100%;
+        padding: 8px 10px;
+        border: 0;
+        border-radius: 6px;
+        background: #0369a1;
+        color: white;
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.6;
+      }
+      #status {
+        color: #334155;
+      }
     </style>
   </head>
   <body>
     <h1 style="font-size: 16px; margin: 0">DraganScroll</h1>
     <p>Gemma 4 plans checkpoint locations at significant reading boundaries.</p>
     <p>Placeholders are added first; questions are generated in a later step.</p>
+    <button id="plan">Plan checkpoints for this tab</button>
+    <p id="status" role="status"></p>
     <script src="popup.js"></script>
   </body>
 </html>

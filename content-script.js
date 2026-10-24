@@ -146,6 +146,20 @@ async function planPlaceholders() {
   );
 }
 
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== "planCurrentDocument") {
+    return;
+  }
+
+  planPlaceholders()
+    .then(() => sendResponse({ ok: true }))
+    .catch((error) => {
+      console.error("Unable to plan document checkpoints", error);
+      sendResponse({ error: "Checkpoint planning failed." });
+    });
+  return true;
+});
+
 if (isLikelyPdfContext) {
   planPlaceholders();
 }
