@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DraganScroll PDF viewer</title>
+    <link rel="stylesheet" href="viewer.css" />
+  </head>
+  <body>
+    <header>
+      <strong>DraganScroll PDF viewer</strong>
+      <input id="file" type="file" accept="application/pdf,.pdf" />
+      <button id="plan" disabled>Plan checkpoints</button>
+      <button id="vision" disabled>Plan scanned pages with Gemma</button>
+      <span id="status" role="status">Choose a PDF to begin.</span>
+    </header>
+    <main id="pages"></main>
+    <script type="module" src="viewer.js"></script>
+  </body>
+</html>
