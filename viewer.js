@@ -12,10 +12,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdf.worke
 const fileInput = document.querySelector("#file");
 const planButton = document.querySelector("#plan");
 const visionButton = document.querySelector("#vision");
+const resetButton = document.querySelector("#reset");
 const status = document.querySelector("#status");
 const pages = document.querySelector("#pages");
 const sourceUrl = new URLSearchParams(window.location.search).get("url");
 let renderedPages = [];
+let warmTextSessionPromise;
+let warmTextSession;
 
 function setStatus(message) {
   status.textContent = message;
@@ -73,6 +76,70 @@ async function loadSource(source) {
     planButton.disabled = true;
     visionButton.disabled = true;
     setStatus(`Unable to load PDF: ${error.message || error}`);
+  }
+
+  async function warmTextModel() {
+    if (warmTextSessionPromise || warmTextSession) {
+      return;
+    }
+    setStatus("Preparing Gemma text model in the background…");
+    warmTextSessionPromise = createTextSession({
+      onDownloadProgress: (loaded, total) => {
+        setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
+      }
+    }).then((session) => {
+      warmTextSession = session;
+      return session;
+    }).finally(() => {
+      warmTextSessionPromise = undefined;
+    });
+    try {
+      await warmTextSessionPromise;
+    } catch (error) {
+      warmTextSessionPromise = undefined;
+      console.warn("Gemma text model warm-up failed:", error);
+    }
+  }
+
+  async function acquireTextSession() {
+    if (warmTextSessionPromise) {
+      await warmTextSessionPromise;
+    }
+    if (warmTextSession) {
+      const session = warmTextSession;
+      warmTextSession = undefined;
+      return session;
+    }
+    return createTextSession({
+      onDownloadProgress: (loaded, total) => {
+        setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
+      }
+    });
+  }
+
+  async function createImageSession() {
+    const availability = await LanguageModel.availability({
+      expectedInputs: [{ type: "image" }],
+      expectedOutputs: [{ type: "text", languages: ["en"] }]
+    });
+    if (availability === "unavailable") {
+      throw new Error(
+        "Gemma image generation is unavailable in this browser. Use Chrome with on-device Gemini Nano enabled."
+      );
+    }
+    if (!["available", "downloadable", "downloading"].includes(availability)) {
+      throw new Error(`Gemma image model is not ready (status: ${availability}).`);
+    }
+    setStatus("Preparing Gemma image model…");
+    return LanguageModel.create({
+      expectedInputs: [{ type: "image" }],
+      expectedOutputs: [{ type: "text", languages: ["en"] }],
+      monitor(monitor) {
+        monitor.addEventListener("downloadprogress", (event) => {
+          setStatus(`Downloading Gemma image model${formatDownloadProgress(event.loaded, event.total)}`);
+        });
+      }
+    });
   }
 }
 
@@ -152,11 +219,7 @@ function addCheckpointCard(page, checkpoint, checkpointIndex, context) {
       feedback.textContent = "Gemma is evaluating your answer…";
       try {
         feedback.textContent = "Preparing Gemma model…";
-        const session = await createTextSession({
-          onDownloadProgress: (loaded, total) => {
-            feedback.textContent = `Downloading Gemma model${formatDownloadProgress(loaded, total)}`;
-          }
-        });
+        const session = await acquireTextSession();
         try {
           feedback.textContent = await evaluateShortAnswer(session, {
             checkpoint,
@@ -192,11 +255,7 @@ async function planAndGenerate(sections, emptyMessage) {
     return;
   }
   setStatus("Preparing Gemma text model…");
-  const session = await createTextSession({
-    onDownloadProgress: (loaded, total) => {
-      setStatus(`Downloading Gemma text model${formatDownloadProgress(loaded, total)}`);
-    }
-  });
+  const session = await acquireTextSession();
   let previousSectionIndex = 0;
   let previousSummary = "";
   try {
@@ -238,48 +297,36 @@ visionButton.addEventListener("click", async () => {
   visionButton.disabled = true;
   planButton.disabled = true;
   try {
-    const availability = await LanguageModel.availability({
-      expectedInputs: [{ type: "image" }],
-      expectedOutputs: [{ type: "text" }],
-      outputLanguage: "en"
-    });
-    if (availability === "unavailable") {
-      throw new Error(
-        "Gemma image generation is unavailable in this browser. Use Chrome with on-device Gemini Nano enabled."
-      );
-    }
-    if (!["available", "downloadable", "downloading"].includes(availability)) {
-      throw new Error(`Gemma image model is not ready (status: ${availability}).`);
-    }
-    setStatus("Preparing Gemma image model…");
-    const session = await LanguageModel.create({
-      expectedInputs: [{ type: "image" }],
-      expectedOutputs: [{ type: "text" }],
-      outputLanguage: "en",
-      monitor(monitor) {
-        monitor.addEventListener("downloadprogress", (event) => {
-          setStatus(`Downloading Gemma image model${formatDownloadProgress(event.loaded, event.total)}`);
-        });
-      }
-    });
+    let session = await createImageSession();
     const sections = [];
     for (const [index, page] of renderedPages.entries()) {
-      setStatus(`Gemma is reading page ${index + 1}…`);
-      const canvas = page.container.querySelector("canvas");
-      const image = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-      const response = await session.prompt([{
-        role: "user",
-        content: [
-          {
-            type: "text",
-            value: "Describe the main readable section on this document page in 1-2 sentences. If unreadable, return an empty string."
-          },
-          { type: "image", value: image }
-        ]
-      }]);
-      const text = response.trim();
-      if (text) {
-        sections.push({ index: sections.length, pageNumber: page.pageNumber, isHeading: false, text });
+      try {
+        setStatus(`Gemma is reading page ${index + 1}…`);
+        const canvas = page.container.querySelector("canvas");
+        const image = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (!image) {
+          throw new Error("The page image could not be prepared.");
+        }
+        const response = await session.prompt([{
+          role: "user",
+          content: [
+            {
+              type: "text",
+              value: "Describe the main readable section on this document page in 1-2 sentences. If unreadable, return an empty string."
+            },
+            { type: "image", value: image }
+          ]
+        }]);
+        const text = response.trim();
+        if (text) {
+          sections.push({ index: sections.length, pageNumber: page.pageNumber, isHeading: false, text });
+        }
+      } catch (error) {
+        console.warn(`Gemma could not read page ${page.pageNumber}:`, error);
+        if (index < renderedPages.length - 1) {
+          session.destroy();
+          session = await createImageSession();
+        }
       }
     }
     session.destroy();
@@ -320,6 +367,17 @@ planButton.addEventListener("click", async () => {
   }
 });
 
+resetButton.addEventListener("click", () => {
+  warmTextSession?.destroy();
+  warmTextSession = undefined;
+  warmTextSessionPromise = undefined;
+  chrome.storage.local.remove(["checkpointMode"]);
+  setStatus("Gemma session reset. Chrome manages the downloaded model cache.");
+  warmTextModel();
+});
+
 if (sourceUrl) {
   loadSource({ url: sourceUrl });
 }
+
+warmTextModel();

@@ -35,6 +35,9 @@ This repository now includes a minimal Manifest V3 extension:
 - Each checkpoint uses the PDF text from the previous checkpoint boundary through the current
   boundary. A bounded rolling summary is carried forward so older sections remain available without
   filling the model context window.
+- The viewer starts preparing the text model in the background when it opens. Chrome owns and
+  persists the on-device model cache; the viewer's reset control only clears the active extension
+  session and cannot delete Chrome's model files.
 - The planner currently uses a deterministic fallback behind a Gemma 4-compatible skill
   interface; the local Gemma 4 runtime can be connected in `gemma4-skill.js`.
 

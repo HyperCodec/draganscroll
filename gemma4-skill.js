@@ -113,9 +113,8 @@ async function createTextSession({ onDownloadProgress } = {}) {
     throw new Error("This browser does not expose the Gemma text API.");
   }
   const availability = await LanguageModel.availability({
-    expectedInputs: [{ type: "text" }],
-    expectedOutputs: [{ type: "text" }],
-    outputLanguage: "en"
+    expectedInputs: [{ type: "text", languages: ["en"] }],
+    expectedOutputs: [{ type: "text", languages: ["en"] }]
   });
   if (availability === "unavailable") {
     throw new Error(
@@ -126,9 +125,8 @@ async function createTextSession({ onDownloadProgress } = {}) {
     throw new Error(`Gemma text model is not ready (status: ${availability}).`);
   }
   return LanguageModel.create({
-    expectedInputs: [{ type: "text" }],
-    expectedOutputs: [{ type: "text" }],
-    outputLanguage: "en",
+    expectedInputs: [{ type: "text", languages: ["en"] }],
+    expectedOutputs: [{ type: "text", languages: ["en"] }],
     monitor(monitor) {
       monitor.addEventListener("downloadprogress", (event) => {
         onDownloadProgress?.(event.loaded, event.total);
