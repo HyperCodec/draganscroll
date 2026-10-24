@@ -11,6 +11,7 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
+            background: #f0f0f0;
         }
         #toolbar {
             padding: 10px;
@@ -18,16 +19,24 @@
             color: white;
             display: flex;
             gap: 10px;
+            align-items: center;
+            z-index: 10;
         }
         #viewer-container {
             flex-grow: 1;
             overflow: auto;
-            background: #eee;
-            position: relative;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
         }
         #canvas-container {
-            margin: 20px auto;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            max-width: 100%;
+        }
+        .error-msg {
+            color: red;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -39,48 +48,75 @@
     <div id="viewer-container">
         <div id="canvas-container"></div>
     </div>
+
+    <!-- Load PDF.js from a reliable CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <script>
         const fileInput = document.getElementById('file-input');
         const status = document.getElementById('status');
         const container = document.getElementById('canvas-container');
 
-        // Configure PDF.js worker
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        // Check if pdfjsLib is loaded correctly
+        if (typeof pdfjsLib === 'undefined') {
+            status.innerHTML = '<span class="error-msg">Error: pdfjsLib not found. Check your internet connection.</span>';
+            console.error("pdfjsLib is not defined");
+        } else {
+            // Configure PDF.js worker
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+            status.innerText = "Ready. Please select a PDF.";
+        }
 
         fileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
             status.innerText = "Loading PDF...";
-            const reader = new FileReader();
-            reader.onload = async function() {
-                const typedarray = new Uint8Array(this.result);
-                const pdf = await pdfjsLib.getDocument(typedarray).promise;
-                status.innerText = `Loaded: ${pdf.numPages} pages`;
-                renderPage(pdf, 1);
-            };
-            reader.readAsArrayBuffer(file);
+            container.innerHTML = "Loading...";
+            
+            try {
+                const reader = new FileReader();
+                reader.onload = async function() {
+                    const typedarray = new Uint8Array(this.result);
+                    
+                    // Use the correctly exported pdfjsLib
+                    const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                    
+                    status.innerText = `Loaded: ${pdf.numPages} pages`;
+                    renderPage(pdf, 1);
+                };
+                reader.readAsArrayBuffer(file);
+            } catch (err) {
+                console.error(err);
+                status.innerHTML = `<span class="error-msg">Error loading PDF: ${err.message}</span>`;
+                container.innerHTML = "Error loading PDF.";
+            }
         });
 
         async function renderPage(pdf, pageNum) {
-            const page = await pdf.getPage(pageNum);
-            const viewport = page.getViewport({ scale: 1.5 });
-            
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-            
-            container.innerHTML = '';
-            container.appendChild(canvas);
-            
-            const renderContext = {
-                canvasContext: context,
-                viewport: viewport
-            };
-            
-            await page.render(renderContext).promise;
+            try {
+                const page = await pdf.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.5 });
+                
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                container.innerHTML = '';
+                container.appendChild(canvas);
+                
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                
+                const render_promise = page.render(renderContext);
+                await render_promise.promise;
+                status.innerText = `Page ${pageNum} rendered`;
+            } catch (err) {
+                console.error(err);
+                status.innerHTML = `<span class="error-msg">Render Error: ${err.message}</span>`;
+            }
         }
     </script>
 </body>

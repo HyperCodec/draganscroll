@@ -6,14 +6,24 @@ function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, 'src/preload.js'),
+      // Since main.js is in /src/main/, preload is in /src/
+      preload: path.join(__dirname, '../preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
 
-  // In production, we'd load a built file. For now, a local file.
-  win.loadFile(path.join(__dirname, 'src/renderer/index.html'));
+  // Path resolution:
+  // __dirname is /home/kass/dv/hackathon/draganscroll/src/main
+  // We want /home/kass/dv/hackathon/draganscroll/src/renderer/index.html
+  // So we go up one level (..) and then into renderer/
+  const indexPath = path.join(__dirname, '../renderer/index.html');
+  
+  win.loadFile(indexPath).then(() => {
+    console.log(`Loaded: ${indexPath}`);
+  }).catch(err => {
+    console.error("Failed to load index.html:", err);
+  });
 
   win.on('closed', () => {
     app.quit();
