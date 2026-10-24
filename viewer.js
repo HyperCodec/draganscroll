@@ -62,7 +62,12 @@ async function renderPdf(source) {
   renderedPages = [];
   setStatus("Loading PDF…");
 
-  const pdf = await pdfjsLib.getDocument(source).promise;
+  const pdf = await pdfjsLib.getDocument({
+    ...source,
+    wasmUrl: chrome.runtime.getURL("vendor/wasm/"),
+    standardFontDataUrl: chrome.runtime.getURL("vendor/wasm/"),
+    useWasm: true
+  }).promise;
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const initialViewport = page.getViewport({ scale: 1.35 });
