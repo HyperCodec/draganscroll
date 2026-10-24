@@ -1,23 +1,69 @@
 const isLikelyPdfContext =
-  window.location.href.toLowerCase().endsWith(".pdf") ||
+  /\.pdf(?:$|[?#])/i.test(window.location.href) ||
   document.contentType === "application/pdf" ||
   Boolean(document.querySelector('embed[type="application/pdf"], object[type="application/pdf"]'));
 
+function normalizeText(value) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function createSection(element, isHeading, text, index) {
+  return {
+    element,
+    index,
+    isHeading,
+    text: text.slice(0, 1200)
+  };
+}
+
 function getSections() {
-  const candidates = [...document.querySelectorAll("h1, h2, h3, h4, p, li")];
-  return candidates
+  const sections = [...document.querySelectorAll(
+    "h1, h2, h3, h4, p, li, [role='heading'], article, section"
+  )]
     .map((element) => ({
       element,
-      isHeading: /^H[1-4]$/.test(element.tagName),
-      text: element.textContent.replace(/\s+/g, " ").trim()
+      isHeading: /^H[1-4]$/.test(element.tagName) || element.getAttribute("role") === "heading",
+      text: normalizeText(element.innerText || element.textContent || "")
     }))
-    .filter(({ isHeading, text }) => isHeading || text.length >= 80)
-    .map(({ element, isHeading, text }, index) => ({
-      element,
-      index,
-      isHeading,
-      text: text.slice(0, 1200)
-    }));
+    .filter(({ isHeading, text }) => isHeading || text.length >= 80);
+
+  if (sections.length >= 2) {
+    return sections.map(({ element, isHeading, text }, index) =>
+      createSection(element, isHeading, text, index)
+    );
+  }
+
+  const documentText = document.body?.innerText || document.body?.textContent || "";
+  if (normalizeText(documentText).length < 160) {
+    return [];
+  }
+
+  const chunks = documentText
+    .split(/\n\s*\n|(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .map(normalizeText)
+    .reduce((result, sentence) => {
+      const previous = result.at(-1);
+      if (previous && previous.length < 500) {
+        result[result.length - 1] = `${previous} ${sentence}`;
+      } else {
+        result.push(sentence);
+      }
+      return result;
+    }, [])
+    .filter((text) => text.length >= 80);
+
+  return chunks.map((text, index) => createSection(document.body, false, text, index));
+}
+
+function waitForSections(attempt = 0) {
+  const sections = getSections();
+  if (sections.length >= 2 || attempt >= 20) {
+    return Promise.resolve(sections);
+  }
+
+  return new Promise((resolve) => {
+    window.setTimeout(() => resolve(waitForSections(attempt + 1)), 500);
+  });
 }
 
 function addPlaceholder(section, index, reason) {
@@ -34,7 +80,16 @@ function addPlaceholder(section, index, reason) {
     color: "#334155",
     font: "13px system-ui, sans-serif"
   });
-  section.before(placeholder);
+  if (section.element === document.body) {
+    Object.assign(placeholder.style, {
+      position: "fixed",
+      top: `${16 + index * 58}px`,
+      right: "16px"
+    });
+    document.documentElement.appendChild(placeholder);
+  } else {
+    section.element.before(placeholder);
+  }
 }
 
 function showStatus(message, isError = false) {
@@ -58,12 +113,12 @@ function showStatus(message, isError = false) {
   window.setTimeout(() => status.remove(), 4000);
 }
 
-function planPlaceholders() {
+async function planPlaceholders() {
   if (document.querySelector(".draganscroll-checkpoint-placeholder")) {
     return;
   }
 
-  const sections = getSections();
+  const sections = await waitForSections();
   if (sections.length < 2) {
     showStatus("No readable sections were found for checkpoint planning.", true);
     return;

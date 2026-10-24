@@ -22,7 +22,8 @@ This repository now includes a minimal Manifest V3 extension:
 ## Current behavior
 
 - The fixed-place checkpoint button has been removed.
-- On a readable PDF page, the extension identifies substantial text sections and plans
+- On a readable PDF page, the extension waits for asynchronously rendered PDF text,
+  identifies substantial text sections (including generic PDF text layers), and plans
   boundaries between significant portions.
 - It inserts placeholder checkpoints only. It does not generate questions or answers.
 - The planner currently uses a deterministic fallback behind a Gemma 4-compatible skill
